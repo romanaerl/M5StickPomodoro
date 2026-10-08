@@ -7,7 +7,7 @@ You control it mostly by **how the device is placed**: put it face down to pause
 > Developed and tested on the M5StickC Plus (ESP32-PICO-D4, AXP192, MPU6886, BM8563, ST7789 135×240).
 > Other M5Stick models need changes; see [PORTING.md](PORTING.md).
 
-![M5StickC Plus controls: power button on the left side, button B on the right side, M5 button under the screen, USB-C at the bottom](docs/device-r3.svg)
+![M5StickC Plus controls: power button on the left side, button B on the right side, M5 button under the screen, USB-C at the bottom](docs/device-r4.svg)
 
 ---
 
@@ -82,7 +82,7 @@ You control it mostly by **how the device is placed**: put it face down to pause
 | Default length | 25 min | 5 min |
 | Bar colour while running | green → orange → red | blue → light blue |
 | Grace-period colour | yellow | violet |
-| Start signal | one short beep | one longer beep |
+| Start signal | one longer beep | one short beep |
 | End signal | three short beeps | two long beeps |
 | Status label | `WORK` | `BREAK` |
 
@@ -126,7 +126,7 @@ The timer keeps running in every pose where the screen faces you. To save batter
 
 ### Poses and screen layouts
 
-![The six poses: flat, long edge A, long edge B, on its end with USB up, on its end with USB down, and face down](docs/poses-r3.svg)
+![The six poses: flat, long edge A, long edge B, on its end with USB up, on its end with USB down, and face down](docs/poses-r4.svg)
 
 | Pose | Layout | Tap to wake |
 |---|---|---|
@@ -141,7 +141,7 @@ A new pose must be stable for a few samples (~0.5 s) before the layout changes. 
 
 ### The screen
 
-![Screen examples: WORK and BREAK grace periods, WORK and BREAK running, the minute glance and the finished state](docs/screens-r3.svg)
+![Screen examples: WORK and BREAK grace periods, WORK and BREAK running, the minute glance and the finished state](docs/screens-r4.svg)
 
 - **Bar:** a white rounded frame with a bar inside whose level drops every second in proportion to the remaining time and changes colour with the mode.
 - **Time:** large digits in the middle with a black halo, so they stay readable over any bar colour.

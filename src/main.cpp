@@ -568,10 +568,10 @@ static void beep(int n, int onMs, int offMs) {
   M5.Power.Axp192.setEXTEN(false);
 }
 
-// End: WORK three short beeps, BREAK two long ones. Start (after the grace period): one beep, shorter
-// for WORK, longer for BREAK.
+// End: WORK three short beeps, BREAK two long ones. Start (after the grace period): one beep, longer
+// for WORK, shorter for BREAK.
 static void endBeep() { mode == WORK ? beep(3, 150, 120) : beep(2, 400, 200); }
-static void startBeep() { beep(1, mode == WORK ? 80 : 250, 0); }
+static void startBeep() { beep(1, mode == WORK ? 250 : 80, 0); }
 
 static void finish() {
   state = FINISHED;
