@@ -7,6 +7,8 @@ You control it mostly by **how the device is placed**: put it face down to pause
 > Developed and tested on the M5StickC Plus (ESP32-PICO-D4, AXP192, MPU6886, BM8563, ST7789 135×240).
 > Other M5Stick models need changes; see [PORTING.md](PORTING.md).
 
+![M5StickC Plus controls: power button on the left side, button B on the right side, M5 button under the screen, USB-C at the bottom](docs/device.svg)
+
 ---
 
 ## Contents
@@ -124,6 +126,8 @@ The timer keeps running in every pose where the screen faces you. To save batter
 
 ### Poses and screen layouts
 
+![The six poses: flat, long edge A, long edge B, on its end with USB up, on its end with USB down, and face down](docs/poses.svg)
+
 | Pose | Layout | Tap to wake |
 |---|---|---|
 | Flat, screen up | landscape | when `TAP` is on |
@@ -136,6 +140,8 @@ The timer keeps running in every pose where the screen faces you. To save batter
 A new pose must be stable for a few samples (~0.5 s) before the layout changes. A layout change shows the screen for 5 seconds.
 
 ### The screen
+
+![Screen examples: WORK and BREAK grace periods, WORK and BREAK running, the minute glance and the finished state](docs/screens.svg)
 
 - **Bar:** a white rounded frame with a bar inside whose level drops every second in proportion to the remaining time and changes colour with the mode.
 - **Time:** large digits in the middle with a black halo, so they stay readable over any bar colour.
@@ -254,4 +260,5 @@ Found while building this on the device:
 platformio.ini   environments: m5stick-c-plus (default) and test (2-minute WORK session)
 src/main.cpp     the whole firmware
 PORTING.md       notes on running it on other M5Stick models
+docs/            the diagrams used in this README (SVG)
 ```
