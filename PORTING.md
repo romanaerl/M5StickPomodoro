@@ -11,7 +11,7 @@ This document lists what to check and change for each model.
 | What | Where | M5StickC Plus assumption |
 |---|---|---|
 | Pins | `PIN_INT`, `PIN_BTN_A`, `PIN_BTN_B`, `PIN_BUZZ` | GPIO35 IMU/RTC INT, GPIO37 button A, GPIO39 button B, GPIO2 buzzer |
-| PMIC | `deepSleep()`, `setup()` (`AXP`, register `0x12`), `beep()` (`Axp192.setEXTEN`) | AXP192 at I2C `0x34`; LDO3 = LCD logic, LDO2 = backlight, EXTEN powers the buzzer |
+| PMIC | `deepSleep()`, `setup()` (`AXP`, register `0x12`), `beep()` (`Axp192.setEXTEN`), `backlightLevel()` (LDO2), `powerKeyPressed()` (register `0x46`) | AXP192 at I2C `0x34`; LDO3 = LCD logic, LDO2 = backlight, EXTEN powers the buzzer |
 | IMU | `imuInit()`, `imuTapSensitive()`, `readAccel()`, `imuMotion()` | MPU6886 at `0x68`, raw register access, wake-on-motion on GPIO35 |
 | Axes | `layoutOf()`, `LAYOUT_ROTATION[]`, `DOWN_G` / `VISIBLE_G` | +z screen up, +x long edge A up, −y USB up |
 | RTC | `rtcSeconds()`, `rtcInit()` | BM8563 at `0x51` |
@@ -64,6 +64,8 @@ Different power architecture. It needs real changes.
 - **Backlight** is PWM on GPIO27; `M5.Display.setBrightness()` already handles it. There is no LCD logic-supply switch,
   so in deep sleep just call `M5.Display.sleep()`.
 - **Buzzer** is on GPIO2 and does not need EXTEN; `beep()` works without the `setEXTEN` lines.
+- **Sound toggle:** `powerKeyPressed()` reads the AXP192 power-key register. On the Plus2 the power button is GPIO35
+  (button C), so read that pin instead.
 - **GPIO35 is the power button (button C)** on the Plus2, not an IMU interrupt. Check whether the MPU6886 INT is routed to
   any ESP32 pin. Without it the firmware falls back to orientation polling: light sleep with 1 s wake-ups while paused.
   That is reliable but uses noticeably more power than deep sleep with wake-on-motion. Deep sleep in `FINISHED` would
