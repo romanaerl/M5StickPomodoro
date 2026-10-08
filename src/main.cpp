@@ -16,7 +16,10 @@
 //            violet for BREAK, that matches this window.
 // Button B : sets the current mode's length (1..60 min, +1 per press, auto-repeat when held); the new
 //            session starts 1 s after the last press. The length is kept in NVS.
-// Power key: a short press while the screen is on toggles the sound (kept in NVS).
+// Power key: while the screen is on, a short press toggles the sound and a long press (1.5 s)
+//            toggles tap-to-wake in the horizontal poses (always on when standing on an end).
+//            Both settings are kept in NVS.
+// Battery  : a bright yellow dot below 40 %, red below 20 %, readable from a distance.
 // Time is measured with the BM8563 crystal RTC, so ESP32 sleep-clock drift does not matter.
 
 #include <M5Unified.h>
@@ -77,6 +80,7 @@ RTC_DATA_ATTR int32_t  pausedRemMs;   // PAUSED: remaining time
 RTC_DATA_ATTR uint8_t  mode = WORK;
 RTC_DATA_ATTR uint8_t  lengthMin[2] = {SESSION_MIN, BREAK_MIN};
 RTC_DATA_ATTR bool     soundOn = true;
+RTC_DATA_ATTR bool     tapFlat = false;  // tap-to-wake in the horizontal poses (flat, long edges)
 RTC_DATA_ATTR bool     womOk;         // GPIO35 interrupt line verified at cold boot
 RTC_DATA_ATTR bool     finishedDown;  // FINISHED: has been face down since the session ended
 RTC_DATA_ATTR uint16_t sleepWakes;    // diagnostics: deep-sleep wakes that went back to sleep
@@ -94,6 +98,8 @@ static int      finishLayout = -1;
 static bool     inGrace = false;  // RUNNING within the grace period of a new session
 static bool     poseChanging = false;
 static bool     noticeShown = false;
+static const char* noticeMsg = "";
+static bool     noticeOn = false;
 
 // ---------- low level ----------
 static void wr(uint8_t addr, uint8_t reg, uint8_t v) { M5.In_I2C.writeRegister8(addr, reg, v, I2C_HZ); }
@@ -245,6 +251,7 @@ static void saveSettings() {
   p.putUChar("min", lengthMin[WORK]);
   p.putUChar("bmin", lengthMin[BREAK]);
   p.putBool("snd", soundOn);
+  p.putBool("tap", tapFlat);
   p.end();
 }
 
@@ -254,6 +261,7 @@ static void loadSettings() {
   lengthMin[WORK] = p.getUChar("min", SESSION_MIN);
   lengthMin[BREAK] = p.getUChar("bmin", BREAK_MIN);
   soundOn = p.getBool("snd", true);
+  tapFlat = p.getBool("tap", false);
   p.end();
   if (lengthMin[WORK] < 1 || lengthMin[WORK] > 60) lengthMin[WORK] = SESSION_MIN;
   if (lengthMin[BREAK] < 1 || lengthMin[BREAK] > 60) lengthMin[BREAK] = BREAK_MIN;
@@ -263,7 +271,7 @@ static void loadSettings() {
 static int32_t sessionMs() { return lengthMin[mode] * 60 * 1000; }
 
 static bool isTall() { return layout == TALL || layout == TALL_FLIP; }
-static bool isTapPose() { return layout == WIDE || isTall(); }
+static bool isTapPose() { return isTall() || tapFlat; }
 
 static const char* stateLabel() {
   if (setting) return mode == WORK ? "SET WORK" : "SET BREAK";
@@ -286,19 +294,40 @@ static void drawTime(int remS, int cx, int cy, int maxW, int maxH) {
   canvas.drawString(buf, cx, cy);
 }
 
+// Battery percentage, or -1 while unknown: right after power-on the AXP192 ADC still reads 0.
+static int readBattery() {
+  int b = M5.Power.getBatteryLevel();
+  return b > 0 ? b : -1;
+}
+
+// Status: state label on the left; battery (with a bright dot when low) on the right, MUTE / TAP
+// flags just left of the battery.
 static void drawStatus(int y, uint8_t datumL, uint8_t datumR) {
-  char buf[16];
+  char buf[16], flags[16];
+  // TAP only matters in landscape: standing on an end, tap-to-wake is always on.
+  snprintf(flags, sizeof flags, "%s%s", soundOn ? "" : "MUTE", tapFlat && !isTall() ? (soundOn ? "TAP" : " TAP") : "");
   canvas.setFont(&fonts::Font2);
   canvas.setTextSize(1);
   canvas.setTextColor(state == FINISHED ? TFT_RED : TFT_LIGHTGREY);
   canvas.setTextDatum(datumL);
   canvas.drawString(stateLabel(), 4, y);
-  if (battery >= 0) {
-    snprintf(buf, sizeof buf, "%s%d%%", soundOn ? "" : "MUTE ", battery);
-    canvas.setTextColor(TFT_LIGHTGREY);
+  int x = canvas.width() - 4;  // right edge of what is still to be drawn
+  if (battery >= 0) {  // low battery: bright dot + coloured percentage, visible from a distance
+    uint16_t c = battery < 20 ? TFT_RED : battery < 40 ? TFT_YELLOW : TFT_LIGHTGREY;
+    snprintf(buf, sizeof buf, "%d%%", battery);
+    canvas.setTextColor(c);
     canvas.setTextDatum(datumR);
-    canvas.drawString(buf, canvas.width() - 4, y);
+    canvas.drawString(buf, x, y);
+    x -= canvas.textWidth(buf) + 4;
+    if (battery < 40) {
+      int cy = datumR == top_right ? y + canvas.fontHeight() / 2 : y - canvas.fontHeight() / 2;
+      canvas.fillCircle(x - 6, cy, 6, c);
+      x -= 16;
+    }
   }
+  canvas.setTextColor(TFT_LIGHTGREY);
+  canvas.setTextDatum(datumR);
+  canvas.drawString(flags, x, y);
 }
 
 // WORK: green -> orange -> red as the session drains. BREAK: blue -> light blue.
@@ -319,7 +348,8 @@ static uint16_t drainColor(int remS) {
 // Rounded frame with a bar inside whose level drops every second with the remaining time; time on
 // top of it. The status line takes an 18 px strip: at the top in portrait, at the bottom in landscape.
 static void render(int remS) {
-  constexpr int STRIP = 18, M = 3, PAD = 5;  // strip, frame margin, frame-to-bar padding
+  if (battery < 0) battery = readBattery();
+  constexpr int STRIP = 18, M = 3, PAD = 5;  // status strip, frame margin, frame-to-bar padding
   const int W = canvas.width(), H = canvas.height();
   const int fy = (isTall() ? STRIP : 0) + M, fw = W - 2 * M, fh = H - STRIP - 2 * M;
   const int bx = M + PAD, by = fy + PAD, bw = fw - 2 * PAD, bh = fh - 2 * PAD;
@@ -334,7 +364,7 @@ static void render(int remS) {
   else drawStatus(H - 1, bottom_left, bottom_right);
   noticeShown = (int32_t)(noticeUntil - millis()) > 0;
   if (noticeShown) {  // banner over the time
-    const char* msg = soundOn ? "SOUND ON" : "SOUND OFF";
+    const char* msg = noticeMsg;
     canvas.setFont(&fonts::Font4);
     canvas.setTextSize(1);
     canvas.setTextSize(std::min(1.0f, (float)(bw - 16) / canvas.textWidth(msg)));
@@ -342,7 +372,7 @@ static void render(int remS) {
     int tw = canvas.textWidth(msg) + 16, th = canvas.fontHeight() + 12;
     canvas.fillRoundRect(W / 2 - tw / 2, by + bh / 2 - th / 2, tw, th, 6, TFT_BLACK);
     canvas.drawRoundRect(W / 2 - tw / 2, by + bh / 2 - th / 2, tw, th, 6, TFT_WHITE);
-    canvas.setTextColor(soundOn ? TFT_GREEN : TFT_RED);
+    canvas.setTextColor(noticeOn ? TFT_GREEN : TFT_RED);
     canvas.drawString(msg, W / 2, by + bh / 2);
   }
   canvas.pushSprite(0, 0);
@@ -358,27 +388,65 @@ static void setLayout(uint8_t l) {
   canvas.createSprite(M5.Display.width(), M5.Display.height());
 }
 
-// AXP192 power key: true on a short press since the last call. Always clears the latched status, so
-// presses made while the screen is off are dropped.
-static bool powerKeyPressed() {
-  uint8_t st = rd(AXP, 0x46);
-  if (st & 0x03) wr(AXP, 0x46, 0x03);
-  return st & 0x02;
+// AXP192 power key events since the last call: 2 = short press, 1 = long press, 0 = none. Always
+// clears the latched status, so presses made while the screen is off are dropped. The AXP192 flags a
+// long press once, at 1.5 s while the key is still held, and reports no release.
+enum : uint8_t { KEY_NONE = 0, KEY_LONG = 1, KEY_SHORT = 2 };
+static uint8_t powerKey() {
+  uint8_t st = rd(AXP, 0x46) & 0x03;
+  if (st) wr(AXP, 0x46, 0x03);
+  return st & KEY_SHORT ? KEY_SHORT : st;
 }
 
-static void toggleSound() {
-  soundOn = !soundOn;
-  saveSettings();
+static void notice(const char* msg, bool on) {
+  noticeMsg = msg;
+  noticeOn = on;
   noticeUntil = millis() + NOTICE_MS;
-  Serial.printf("sound %s\n", soundOn ? "on" : "off");
+  Serial.println(msg);
+}
+
+// Short press: sound on/off, saved at once. Long press: tap-to-wake in the horizontal poses on/off,
+// applied at once but saved only after the 6 s power-off hold would have cut the power. Holding the
+// key to switch the device off therefore leaves the saved setting unchanged.
+constexpr uint32_t TAP_SAVE_DELAY_MS = 6000;
+static bool     tapSavePending = false;
+static uint32_t tapSaveAt = 0;
+
+static void applyPowerKey(uint8_t key) {
+  if (key == KEY_SHORT) {
+    soundOn = !soundOn;
+    notice(soundOn ? "SOUND ON" : "SOUND OFF", soundOn);
+    saveSettings();
+  } else {
+    tapFlat = !tapFlat;
+    imuTapSensitive(isTapPose());
+    notice(tapFlat ? "TAP ON" : "TAP OFF", tapFlat);
+    tapSavePending = true;
+    tapSaveAt = millis() + TAP_SAVE_DELAY_MS;
+  }
+}
+
+// Saves a pending tap setting once due (or right away with `now`, e.g. before deep sleep).
+static void flushTapSave(bool now = false) {
+  if (tapSavePending && (now || (int32_t)(millis() - tapSaveAt) >= 0)) {
+    tapSavePending = false;
+    saveSettings();
+  }
+}
+
+// Caps a light-sleep duration so that a pending tap setting is saved on time.
+static uint32_t untilTapSave(uint32_t ms) {
+  if (!tapSavePending) return ms;
+  int32_t left = (int32_t)(tapSaveAt - millis());
+  return std::min<uint32_t>(ms, left > 0 ? left : 1);
 }
 
 static void screenWake(int remS, uint32_t ms = SCREEN_ON_MS) {
   uint32_t until = millis() + ms;
   if (!screenOn || (int32_t)(until - screenOffAt) > 0) screenOffAt = until;  // extend, never shorten
   if (!screenOn) {
-    powerKeyPressed();  // drop presses made while the screen was off
-    battery = M5.Power.getBatteryLevel();
+    powerKey();  // drop presses made while the screen was off
+    battery = readBattery();
     M5.Display.wakeup();
     render(remS);
     M5.Display.setBrightness(BRIGHTNESS);
@@ -423,7 +491,8 @@ static void startSession() {
   Serial.printf("%s: new %d min session\n", mode == WORK ? "WORK" : "BREAK", lengthMin[mode]);
 }
 
-// Button B: +1 min per press (auto-repeat while held), wraps 60 -> 1. Starts 1 s after the last press.
+// Button B: the first press shows the current length, each further press adds 1 min (auto-repeat
+// while held), wrapping 60 -> 1. The session starts 1 s after the last press.
 static void bumpLength() {
   lengthMin[mode] = lengthMin[mode] % 60 + 1;
   screenWake(lengthMin[mode] * 60);
@@ -432,10 +501,15 @@ static void bumpLength() {
 static void adjustLength() {
   steadyScreen();
   setting = true;
+  const uint8_t before = lengthMin[mode];
+  screenWake(before * 60);  // the first press only shows the current length
+  render(before * 60);
+  bool first = true;
   uint32_t last = millis();
   do {
     if (digitalRead(PIN_BTN_B) == LOW) {
-      bumpLength();
+      if (!first) bumpLength();
+      first = false;
       uint32_t repeatAt = millis() + 500;
       while (digitalRead(PIN_BTN_B) == LOW) {
         nap(20, false);
@@ -446,7 +520,7 @@ static void adjustLength() {
     nap(20, false);
   } while (millis() - last < SET_TIMEOUT_MS);
   setting = false;
-  saveSettings();
+  if (lengthMin[mode] != before) saveSettings();
   startSession();
 }
 
@@ -459,6 +533,7 @@ static void resume(uint32_t since) {
 
 // PAUSED / FINISHED: deep sleep until the IMU sees motion (or button A when finished).
 [[noreturn]] static void deepSleep() {
+  flushTapSave(true);
   M5.In_I2C.bitOff(AXP, 0x12, 1 << 3, I2C_HZ);  // LCD logic power (LDO3) off
   wr(AXP, 0x46, 0x03);                           // drop pending power-key presses
   imuTapSensitive(false);
@@ -548,14 +623,15 @@ void setup() {
   sleepWakes = 0;
 
   if (!warm) {  // cold boot or reset: always a new WORK session
+    wr(AXP, 0x36, (rd(AXP, 0x36) & ~0x30) | 0x10);  // power key long press = 1.5 s
     rtcInit();
     imuInit();
     womOk = imuSelfTest();
     loadSettings();
     mode = WORK;
     startSession();
-    Serial.printf("battery=%d%% womOk=%d work=%d break=%d sound=%d\n", M5.Power.getBatteryLevel(), womOk,
-                  lengthMin[WORK], lengthMin[BREAK], soundOn);
+    Serial.printf("battery=%d%% womOk=%d work=%d break=%d sound=%d tap=%d\n", M5.Power.getBatteryLevel(),
+                  womOk, lengthMin[WORK], lengthMin[BREAK], soundOn, tapFlat);
   } else if (state == PAUSED) {
     resume(since);
   } else if (state == FINISHED) {  // button A, or face down and back up: same mode again
@@ -576,26 +652,27 @@ static void backlightLevel(uint8_t level) {  // 0 = off, else AXP192 LDO2 = 1.8 
 // Minute-mark glance: static minutes, backlight steps up then down. A button press or turning face
 // down cuts it short so that runStep() can react.
 static void glance(int remS) {
-  powerKeyPressed();  // drop presses made while the screen was off
+  powerKey();  // drop presses made while the screen was off
   minutesOnly = true;
-  battery = M5.Power.getBatteryLevel();
+  battery = readBattery();
   M5.Display.wakeup();
   render(remS);
   minutesOnly = false;
   Serial.printf("glance: %d min\n", (remS + 59) / 60);
-  bool sound = false, stop = false;
+  uint8_t key = KEY_NONE;
+  bool stop = false;
   for (uint8_t level : GLANCE_LEVELS) {
     backlightLevel(level);
     for (int i = 0; i < 5 && !stop; i++) {  // poll every 200 ms
       nap(GLANCE_STEP_MS / 5, true, false);
-      sound = powerKeyPressed();
-      stop = sound || digitalRead(PIN_BTN_A) == LOW || digitalRead(PIN_BTN_B) == LOW || readAccel().z < DOWN_G;
+      key = powerKey();
+      stop = key || digitalRead(PIN_BTN_A) == LOW || digitalRead(PIN_BTN_B) == LOW || readAccel().z < DOWN_G;
     }
     if (stop) break;
   }
   lastDrawn = -1;
-  if (sound) {  // the screen was visible: switch to the normal screen with the banner
-    toggleSound();
+  if (key) {  // the screen was visible: switch to the normal screen with the banner
+    applyPowerKey(key);
     screenWake(remS);
     return;
   }
@@ -604,10 +681,11 @@ static void glance(int remS) {
 }
 
 // Button A restarts, button B sets the length (returns true: a new session was started). The power
-// key toggles the sound, only while the screen is on.
+// key works only while the screen is on.
 static bool handleButtons(int remS) {
-  if (powerKeyPressed() && screenOn) {
-    toggleSound();
+  uint8_t key = powerKey();
+  if (key && screenOn) {
+    applyPowerKey(key);
     screenWake(remS);
     render(remS);
   }
@@ -683,7 +761,8 @@ static void runStep() {
   bool moving = (int32_t)(motionUntil - millis()) > 0;
   if (downCount || layoutCount || moving) ms = std::min<uint32_t>(ms, CONFIRM_STEP_MS);
   if (!womOk) ms = std::min<uint32_t>(ms, 1000);  // fallback: poll orientation
-  nap(ms, true, !moving);
+  flushTapSave();
+  nap(untilTapSave(ms), true, !moving);
 }
 
 // FINISHED with the screen on (blinking): buttons and layout still work; face down or timeout -> deep sleep.
@@ -717,6 +796,7 @@ static void finishedStep() {
   if ((int32_t)(millis() - screenOffAt) >= 0) { screenSleep(); return; }
   uint32_t t = millis() - finishedAt;
   M5.Display.setBrightness((t / BLINK_MS) % 2 ? 0 : BRIGHTNESS);  // backlight only, panel stays awake
+  flushTapSave();
   nap(std::min<uint32_t>(CONFIRM_STEP_MS, BLINK_MS - t % BLINK_MS), true, false);
 }
 
