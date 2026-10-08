@@ -7,7 +7,7 @@ You control it mostly by **how the device is placed**: put it face down to pause
 > Developed and tested on the M5StickC Plus (ESP32-PICO-D4, AXP192, MPU6886, BM8563, ST7789 135×240).
 > Other M5Stick models need changes; see [PORTING.md](PORTING.md).
 
-![M5StickC Plus controls: power button on the left side, button B on the right side, M5 button under the screen, USB-C at the bottom](docs/device.svg?v=2)
+![M5StickC Plus controls: power button on the left side, button B on the right side, M5 button under the screen, USB-C at the bottom](docs/device-r3.svg)
 
 ---
 
@@ -126,7 +126,7 @@ The timer keeps running in every pose where the screen faces you. To save batter
 
 ### Poses and screen layouts
 
-![The six poses: flat, long edge A, long edge B, on its end with USB up, on its end with USB down, and face down](docs/poses.svg?v=2)
+![The six poses: flat, long edge A, long edge B, on its end with USB up, on its end with USB down, and face down](docs/poses-r3.svg)
 
 | Pose | Layout | Tap to wake |
 |---|---|---|
@@ -141,7 +141,7 @@ A new pose must be stable for a few samples (~0.5 s) before the layout changes. 
 
 ### The screen
 
-![Screen examples: WORK and BREAK grace periods, WORK and BREAK running, the minute glance and the finished state](docs/screens.svg?v=2)
+![Screen examples: WORK and BREAK grace periods, WORK and BREAK running, the minute glance and the finished state](docs/screens-r3.svg)
 
 - **Bar:** a white rounded frame with a bar inside whose level drops every second in proportion to the remaining time and changes colour with the mode.
 - **Time:** large digits in the middle with a black halo, so they stay readable over any bar colour.
