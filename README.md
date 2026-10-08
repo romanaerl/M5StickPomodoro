@@ -16,6 +16,7 @@ You control it mostly by **how the device is placed**: put it face down to pause
 - [Features at a glance](#features-at-a-glance)
 - [Cheat sheet](#cheat-sheet)
 - [How it works](#how-it-works)
+  - [Switching on and off](#switching-on-and-off)
   - [Two modes: WORK and BREAK](#two-modes-work-and-break)
   - [Starting a session and the grace period](#starting-a-session-and-the-grace-period)
   - [While a session runs](#while-a-session-runs)
@@ -57,7 +58,8 @@ You control it mostly by **how the device is placed**: put it face down to pause
 
 | You do | It does |
 |---|---|
-| Power on | Starts a new WORK session. |
+| **Switch on:** press the **power** button (left side) | The device starts and begins a new WORK session. |
+| **Switch off:** hold the **power** button for **about 6 seconds** | The screen goes dark and the device powers off completely. |
 | Put it **face down** | Pauses. The screen goes dark and the device sleeps deeply. |
 | Turn it **face up** (any visible pose) | Resumes from exactly where it paused. |
 | **M5** button (big, under the screen) | Restarts the current mode. |
@@ -66,7 +68,6 @@ You control it mostly by **how the device is placed**: put it face down to pause
 | **B** further presses / hold | +1 minute per press (wraps 60 → 1); holding repeats quickly. The session starts 1 s after the last press. |
 | **Power** button (left side), short press, screen on | Sound on / off (`SOUND ON` / `SOUND OFF`). |
 | **Power** button, hold ~1.5 s, screen on | Tap-to-wake in horizontal poses on / off (`TAP ON` / `TAP OFF`). |
-| **Power** button, hold 6 s | Switches the device off (hardware). This does not change any setting. |
 | Tap the table (tap poses) | Shows the full `MM:SS` for 5 s. |
 | Session ends, then move it to another pose for 1 s | Starts the other mode (WORK → BREAK or BREAK → WORK). |
 | Session ends, then face down and back up | Starts the same mode again. |
@@ -74,6 +75,15 @@ You control it mostly by **how the device is placed**: put it face down to pause
 ---
 
 ## How it works
+
+### Switching on and off
+
+- **On:** press the **power button** on the left side (screen facing you, USB at the bottom). A new WORK session starts right away.
+- **Off:** **hold the power button for about 6 seconds** until the screen goes dark. The power chip (AXP192) cuts the power completely. The timer stops and nothing runs until you switch it on again.
+- **On USB:** while the cable is connected the device is powered and charging; you still switch it off the same way.
+- **What survives switching off:** both session lengths, the sound setting and the tap setting. The running session does not: switching on always starts a fresh WORK session.
+- Holding the button to switch off passes the 1.5-second mark that toggles `TAP`, so `TAP ON` / `TAP OFF` may flash on the way. The device powers off before that change is saved, so your tap setting stays as it was.
+- You don't need to switch it off between sessions: face down it sleeps deeply and draws very little power.
 
 ### Two modes: WORK and BREAK
 
