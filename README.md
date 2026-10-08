@@ -29,7 +29,9 @@ You control it by how the device is placed and with its two buttons. It uses no 
 
 The screen shows the remaining time `MM:SS` on top of a bar inside a rounded frame. The bar drops every second in proportion to the remaining time and fades green → orange → red. A status line (`RUNNING` / `SET` / `FINISHED`) and the battery level are shown at the bottom, or at the top in portrait.
 
-To save battery, the screen is on for **5 seconds once a minute**. It also turns on when the pose changes and, in tap poses, when you tap the table.
+To save battery and stay unobtrusive, the screen shows a **5-second glance once a minute**: only the remaining minutes (`MM`, static), with the backlight stepping up and down one level per second (7 → 8 → 9 → 8 → 7). When the pose changes, a session starts or resumes, or you tap the table in a tap pose, the screen instead shows the full `MM:SS` for 5 s.
+
+The fade is stepped because the AXP192 drives the backlight through the LDO2 voltage in 0.1 V steps, and level 7 (2.5 V) is the first visible one. Smoother fading would need software PWM, which keeps the CPU awake and costs noticeably more battery.
 
 ## Build and flash
 

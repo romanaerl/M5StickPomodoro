@@ -1,7 +1,8 @@
 // Low-power Pomodoro timer for M5StickC Plus (ESP32-PICO-D4, AXP192, MPU6886, BM8563, ST7789).
 //
-// RUNNING  : any orientation except face down. Light sleep between events; screen on for 5 s at
-//            every minute mark and whenever the layout changes. Layout follows the device pose:
+// RUNNING  : any orientation except face down. Light sleep between events. At every minute mark
+//            the screen fades in and out over 5 s showing only the minutes; on a layout change or a
+//            tap it shows MM:SS for 5 s. Layout follows the device pose:
 //            flat / long edges -> landscape, standing on its end -> portrait. A bar in a rounded
 //            frame behind the digits drains every second and fades green -> orange -> red.
 //            On long edge A and on either end, a light tap or vibration also shows the screen.
@@ -25,6 +26,10 @@ constexpr uint32_t SCREEN_ON_MS = 5000;
 constexpr uint32_t FINISHED_SCREEN_MS = 2 * 60 * 1000;  // blinking, unless turned face down
 constexpr uint32_t BLINK_MS = 500;
 constexpr uint8_t  BRIGHTNESS   = 96;
+// Minute-mark glance: backlight steps through these AXP192 LDO2 levels (1.8 V + 0.1 V * level), one
+// per second. Level 7 is the first one visible on the device; level 9 equals BRIGHTNESS.
+constexpr uint8_t  GLANCE_LEVELS[] = {7, 8, 9, 8, 7};
+constexpr uint32_t GLANCE_STEP_MS  = 1000;
 
 constexpr gpio_num_t PIN_INT   = GPIO_NUM_35;  // MPU6886 INT (shared with BM8563 INT), active low
 constexpr gpio_num_t PIN_BTN_A = GPIO_NUM_37;  // front "M5" button, active low
@@ -63,7 +68,7 @@ static uint16_t motionEvents;         // diagnostics: WOM interrupts while runni
 
 static M5Canvas canvas(&M5.Display);
 static uint8_t  layout = WIDE;
-static bool     screenOn = false, setting = false;
+static bool     screenOn = false, setting = false, minutesOnly = false;
 static uint32_t screenOffAt = 0;
 static int      lastMinShown = -1, lastDrawn = -1, battery = -1;
 static int      downCount = 0, layoutCount = 0, pendingLayout = -1;
@@ -246,7 +251,8 @@ static const char* stateLabel() {
 
 static void drawTime(int remS, int cx, int cy, int maxW, int maxH) {
   char buf[8];
-  snprintf(buf, sizeof buf, "%02d:%02d", remS / 60, remS % 60);
+  if (minutesOnly) snprintf(buf, sizeof buf, "%02d", (remS + 59) / 60);
+  else snprintf(buf, sizeof buf, "%02d:%02d", remS / 60, remS % 60);
   canvas.setFont(&fonts::Font7);
   canvas.setTextSize(1);
   canvas.setTextSize(std::min((float)maxW / canvas.textWidth("88:88"), (float)maxH / canvas.fontHeight()));
@@ -501,6 +507,31 @@ void setup() {
   setLayout(l < 0 ? FLAT : l);
 }
 
+static void backlightLevel(uint8_t level) {  // 0 = off, else AXP192 LDO2 = 1.8 V + 0.1 V * level
+  if (!level) { M5.In_I2C.bitOff(AXP, 0x12, 1 << 2, I2C_HZ); return; }
+  wr(AXP, 0x28, (rd(AXP, 0x28) & 0x0F) | (level << 4));
+  M5.In_I2C.bitOn(AXP, 0x12, 1 << 2, I2C_HZ);
+}
+
+// Minute-mark glance: static minutes, backlight steps up then down. A button press or turning face
+// down cuts it short so that runStep() can react.
+static void glance(int remS) {
+  minutesOnly = true;
+  battery = M5.Power.getBatteryLevel();
+  M5.Display.wakeup();
+  render(remS);
+  minutesOnly = false;
+  Serial.printf("glance: %d min\n", (remS + 59) / 60);
+  for (uint8_t level : GLANCE_LEVELS) {
+    backlightLevel(level);
+    nap(GLANCE_STEP_MS, true, false);
+    if (digitalRead(PIN_BTN_A) == LOW || digitalRead(PIN_BTN_B) == LOW || readAccel().z < DOWN_G) break;
+  }
+  backlightLevel(0);
+  M5.Display.sleep();
+  lastDrawn = -1;
+}
+
 // Button A restarts, button B sets the length. Returns true if a new session was started.
 static bool handleButtons() {
   if (digitalRead(PIN_BTN_A) == LOW) {
@@ -551,7 +582,12 @@ static void runStep() {
   followLayout(a, remS);
 
   int ceilMin = (remS + 59) / 60;
-  if (ceilMin != lastMinShown) { lastMinShown = ceilMin; screenWake(remS); }
+  if (ceilMin != lastMinShown) {
+    bool scheduled = lastMinShown >= 0 && !screenOn;  // not the first show of a session / resume
+    lastMinShown = ceilMin;
+    if (scheduled) { glance(remS); return; }  // ~5 s passed: recompute before sleeping
+    screenWake(remS);
+  }
   if (screenOn) {
     if (remS != lastDrawn) render(remS);
     if ((int32_t)(millis() - screenOffAt) >= 0) screenSleep();
