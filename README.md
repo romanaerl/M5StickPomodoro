@@ -2,7 +2,7 @@
 
 [![Latest release](https://img.shields.io/github/v/release/romanaerl/M5StickPomodoro)](https://github.com/romanaerl/M5StickPomodoro/releases/latest)
 
-**[Download the latest firmware](https://github.com/romanaerl/M5StickPomodoro/releases/latest)** — one `.bin` for every supported model, flashable straight from the browser ([how](#tldr)).
+**[Install from the browser](https://romanaerl.github.io/M5StickPomodoro/)** — one click, no tools, settings kept. Or **[download the latest firmware](https://github.com/romanaerl/M5StickPomodoro/releases/latest)** to flash it yourself.
 
 A standalone, battery-friendly Pomodoro timer for the **M5StickC Plus** and the original **M5StickC**.
 
@@ -52,10 +52,11 @@ You control it mostly by **how the device is placed**: put it face down to pause
 | **M5StickC (original)** | No buzzer: the red LED blinks instead of beeping, and the power button's short press switches the LED (`LED ON` / `LED OFF`). Smaller 80×160 screen: compact status line; in portrait it shows only the mode and battery (option flags such as `NO LED` / `TAP` appear in landscape). Only units with the MPU6886 IMU (early SH200Q units are not supported). |
 
 **Flashing — quickest way (no tools to install)**
-1. Download `M5StickPomodoro-vX.Y.Z.bin` from the [latest release](https://github.com/romanaerl/M5StickPomodoro/releases/latest).
-2. Connect the device over USB and switch it on.
-3. Open the [Espressif web flasher](https://espressif.github.io/esptool-js/) in Chrome or Edge (not Safari), press **Connect** and pick the device's port.
-4. Set **Flash Address** to `0x0`, choose the downloaded file, press **Program**.
+1. Connect the device over USB and switch it on.
+2. Open the **[web installer](https://romanaerl.github.io/M5StickPomodoro/)** in Chrome or Edge (not Safari).
+3. Press **Connect**, pick the port with `usbserial` in its name, press **Install**. The device restarts by itself; saved settings are kept.
+
+On macOS, if the port is busy, run `killall scrod` first (see [below](#build-and-flash)).
 
 **Flashing from source:** install [PlatformIO](https://platformio.org/), run `scripts/flash.sh`, choose the device, confirm.
 
@@ -251,11 +252,15 @@ Power-on always starts a fresh WORK session. Settings are written to flash only 
 
 ## Build and flash
 
+### Web installer
+
+The **[web installer](https://romanaerl.github.io/M5StickPomodoro/)** (GitHub Pages, [ESP Web Tools](https://esphome.github.io/esp-web-tools/)) flashes the current release from Chrome or Edge with one button. It writes the bootloader, partition table and firmware at their own offsets and leaves the settings partition alone, so saved settings survive. It resets the device when done and releases the port. The page is published from the `production` branch by `.github/workflows/pages.yml`.
+
 ### Without building: release image
 
 Every [release](https://github.com/romanaerl/M5StickPomodoro/releases) has one file, `M5StickPomodoro-vX.Y.Z.bin`. It contains the bootloader, partition table and firmware, and is the same for every supported model. Flash it at offset **`0x0`**:
 
-- **In the browser:** open the [Espressif web flasher](https://espressif.github.io/esptool-js/) in Chrome or Edge, press **Connect**, pick the device, set **Flash Address** to `0x0`, choose the file and press **Program**.
+- **In the browser, by hand:** open the [Espressif web flasher](https://espressif.github.io/esptool-js/) in Chrome or Edge, press **Connect**, pick the device, set **Flash Address** to `0x0`, choose the file and press **Program**. Then press **Disconnect** (or close the tab); while the page holds the port the device stays in reset. If it still shows nothing, switch it off and on.
 - **With esptool:**
   ```bash
   esptool.py --chip esp32 write_flash 0x0 M5StickPomodoro-vX.Y.Z.bin
@@ -344,6 +349,9 @@ src/boards.h     board profiles: one row per supported model
 scripts/flash.sh choose a connected device, check it and flash it (scripts/flash.py does the work)
 scripts/build_release.sh  build the single-file release image into dist/
 .github/workflows/release.yml  CI build; publishes a release with the image for every v* tag
+scripts/build_web.sh      build the web installer site into dist/web
+web/index.html            the web installer page
+.github/workflows/pages.yml    publishes the web installer to GitHub Pages from the production branch
 PORTING.md       supported models, adding a board profile, notes on other M5Stick models
 docs/            the diagrams used in this README (SVG)
 ```

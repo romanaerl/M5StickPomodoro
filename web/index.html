@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>M5StickPomodoro Installer</title>
+  <meta name="description" content="Install the M5StickPomodoro firmware on an M5StickC Plus or M5StickC from the browser.">
+  <script type="module" src="https://unpkg.com/esp-web-tools@10.4.0/dist/web/install-button.js?module"></script>
+  <style>
+    :root {
+      --bg: #ffffff; --fg: #1f2328; --muted: #57606a; --line: #d0d7de; --card: #f6f8fa;
+      --accent: #f26b1d; --accent-fg: #ffffff;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #0d1117; --fg: #e6edf3; --muted: #9198a1; --line: #30363d; --card: #161b22; }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--fg);
+      font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    }
+    main { max-width: 760px; margin: 0 auto; padding: 32px 16px 48px; }
+    h1 { margin: 0 0 4px; font-size: 32px; }
+    .version { color: var(--muted); margin: 0 0 24px; }
+    h2 { margin: 32px 0 8px; font-size: 20px; }
+    .install {
+      background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+      padding: 20px; margin: 16px 0 8px;
+    }
+    esp-web-install-button { --esp-tools-button-color: var(--accent); --esp-tools-button-text-color: var(--accent-fg); }
+    .note { color: var(--muted); font-size: 14px; }
+    .warn { border-left: 3px solid var(--accent); padding: 4px 12px; margin: 12px 0; }
+    table { border-collapse: collapse; width: 100%; font-size: 15px; }
+    th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    code { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; font-size: 14px; }
+    ol { padding-left: 22px; }
+    li { margin: 4px 0; }
+    a { color: var(--accent); }
+  </style>
+</head>
+<body>
+<main>
+  <h1>M5StickPomodoro</h1>
+  <p class="version">Firmware __VERSION__ · <a href="https://github.com/romanaerl/M5StickPomodoro">source and documentation</a></p>
+
+  <p>A battery-friendly Pomodoro timer you control by how the device is placed. Install it on your M5Stick right from this page: nothing to download, no addresses to type.</p>
+
+  <div class="install">
+    <esp-web-install-button manifest="manifest.json">
+      <span slot="unsupported">Your browser cannot talk to USB devices. Open this page in <b>Chrome</b> or <b>Edge</b> on a computer.</span>
+      <span slot="not-allowed">Serial access needs a secure page (https).</span>
+    </esp-web-install-button>
+    <ol>
+      <li>Connect the M5Stick over USB and <b>switch it on</b> (the port only exists while it is on).</li>
+      <li>Press <b>Connect</b> above and pick the port with <code>usbserial</code> in its name.</li>
+      <li>Press <b>Install</b> and wait. The device restarts by itself when the install is done.</li>
+    </ol>
+    <p class="note">Updating keeps your saved settings (session lengths, sound, tap). The device is identified automatically; one firmware fits every supported model.</p>
+  </div>
+
+  <div class="warn">
+    <b>macOS: the port is busy or nothing connects?</b> The VoiceOver braille service grabs new USB serial ports. Run
+    <code>killall scrod</code> in Terminal, then press Connect again. Also close any other program that has the port
+    open (a serial monitor, another browser tab).
+  </div>
+
+  <h2>Supported models</h2>
+  <table>
+    <tr><th>Model</th><th>Notes</th></tr>
+    <tr><td><b>M5StickC Plus v1.1</b></td><td>Main target; all features.</td></tr>
+    <tr><td><b>M5StickC (original)</b></td><td>No buzzer: the red LED signals instead. Smaller screen with a compact status line. Units with the MPU6886 IMU only.</td></tr>
+  </table>
+
+  <h2>Other ways to flash</h2>
+  <p>Download the single-file image from the <a href="https://github.com/romanaerl/M5StickPomodoro/releases/latest">latest release</a> and write it at offset <code>0x0</code> with <code>esptool.py --chip esp32 write_flash 0x0 M5StickPomodoro-vX.Y.Z.bin</code>, or build from source with <code>scripts/flash.sh</code>. Writing the single-file image resets the saved settings.</p>
+</main>
+</body>
+</html>
