@@ -66,8 +66,9 @@ The accelerometer orientation depends on how the chip sits on the PCB, so measur
 **Supported and tested.** Same ESP32-PICO-D4, AXP192, MPU6886, BM8563 and GPIO35/37/39 pinout as the Plus, and the same
 accelerometer axes and display rotations (measured on the device). Its profile differs in:
 
-- **Display:** ST7735S 80×160 (`compact`). The status line uses a smaller font, and in portrait it takes two lines:
-  the mode on the first, battery and flags on the second. Digit sizes follow the panel size.
+- **Display:** ST7735S 80×160 (`compact`). The status line uses a smaller font. In portrait the 80 px line shows only
+  the mode and the battery: the option flags (`NO LED`, `TAP`) are left out, and the longest labels are shortened
+  (`DONE`, `SET W`, `SET B`). Digit sizes follow the panel size.
 - **No buzzer** (`buzzerPin = -1`). Signals use the same patterns on the red LED (GPIO10). The LED also blinks with the
   screen after a session ends. The power button's short press switches the LED (`LED ON` / `LED OFF`, flag `NO LED`).
 - **Battery** is smaller (≈95 mAh), so expect proportionally shorter runtime.

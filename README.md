@@ -45,7 +45,7 @@ You control it mostly by **how the device is placed**: put it face down to pause
 | Model | Notes |
 |---|---|
 | **M5StickC Plus v1.1** | Main target; all features as described here. |
-| **M5StickC (original)** | No buzzer: the red LED blinks instead of beeping, and the power button's short press switches the LED (`LED ON` / `LED OFF`). Smaller 80×160 screen: compact status line, in portrait on two lines. Only units with the MPU6886 IMU (early SH200Q units are not supported). |
+| **M5StickC (original)** | No buzzer: the red LED blinks instead of beeping, and the power button's short press switches the LED (`LED ON` / `LED OFF`). Smaller 80×160 screen: compact status line; in portrait it shows only the mode and battery (option flags such as `NO LED` / `TAP` appear in landscape). Only units with the MPU6886 IMU (early SH200Q units are not supported). |
 
 **Flashing**
 1. Install [PlatformIO](https://platformio.org/).

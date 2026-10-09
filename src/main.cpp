@@ -283,10 +283,11 @@ static int32_t sessionMs() { return lengthMin[mode] * 60 * 1000; }
 static bool isTall() { return layout == TALL || layout == TALL_FLIP; }
 static bool isTapPose() { return isTall() || tapFlat; }
 
-static const char* stateLabel() {
-  if (setting) return mode == WORK ? "SET WORK" : "SET BREAK";
+// `narrow`: the 80 px wide StickC portrait status line, where the longest labels are shortened.
+static const char* stateLabel(bool narrow = false) {
+  if (setting) return mode == WORK ? (narrow ? "SET W" : "SET WORK") : (narrow ? "SET B" : "SET BREAK");
   if (state == RUNNING) return mode == WORK ? "WORK" : "BREAK";
-  return state == PAUSED ? "PAUSED" : "FINISHED";
+  return state == PAUSED ? "PAUSED" : narrow ? "DONE" : "FINISHED";
 }
 
 static void drawTime(int remS, int cx, int cy, int maxW, int maxH) {
@@ -320,18 +321,20 @@ static int readBattery() {
 }
 
 // Status: state label on the left; battery (with a bright dot when low) on the right, MUTE / TAP
-// flags just left of the battery. `yR` puts the right part on its own line (narrow StickC portrait).
-static void drawStatus(int y, uint8_t datumL, uint8_t datumR, int yR) {
+// flags just left of the battery. The narrow StickC portrait line has no room for the flags and uses
+// shorter labels.
+static void drawStatus(int y, uint8_t datumL, uint8_t datumR) {
+  const bool narrow = prof().compact && isTall();
   char buf[16], flags[16];
   // TAP only matters in landscape: standing on an end, tap-to-wake is always on.
   snprintf(flags, sizeof flags, "%s%s", soundOn ? "" : hasBuzzer() ? "MUTE" : "NO LED",
            tapFlat && !isTall() ? (soundOn ? "TAP" : " TAP") : "");
+  if (narrow) flags[0] = 0;
   if (prof().compact) canvas.setFont(&fonts::Font0); else canvas.setFont(&fonts::Font2);
   canvas.setTextSize(1);
   canvas.setTextColor(state == FINISHED ? TFT_RED : TFT_LIGHTGREY);
   canvas.setTextDatum(datumL);
-  canvas.drawString(stateLabel(), 4, y);
-  y = yR;
+  canvas.drawString(stateLabel(narrow), 4, y);
   const int r = prof().compact ? 3 : 6;  // low-battery dot radius
   int x = canvas.width() - 4;  // right edge of what is still to be drawn
   if (battery >= 0) {  // low battery: bright dot + coloured percentage, visible from a distance
@@ -369,11 +372,11 @@ static uint16_t drainColor(int remS) {
 
 // Rounded frame with a bar inside whose level drops every second with the remaining time; time on
 // top of it. The status line takes a strip at the top in portrait, at the bottom in landscape: 18 px
-// on the Plus; on the StickC 10 px, or 20 px (two lines) in portrait.
+// on the Plus, 10 px on the StickC.
 static void render(int remS) {
   if (battery < 0) battery = readBattery();
   constexpr int M = 3, PAD = 5;  // frame margin, frame-to-bar padding
-  const int STRIP = !prof().compact ? 18 : isTall() ? 20 : 10;
+  const int STRIP = prof().compact ? 10 : 18;
   const int W = canvas.width(), H = canvas.height();
   const int fy = (isTall() ? STRIP : 0) + M, fw = W - 2 * M, fh = H - STRIP - 2 * M;
   const int bx = M + PAD, by = fy + PAD, bw = fw - 2 * PAD, bh = fh - 2 * PAD;
@@ -384,8 +387,8 @@ static void render(int remS) {
   canvas.fillRect(bx, by, bw, bh - fill, canvas.color565(30, 30, 30));
   canvas.fillRect(bx, by + bh - fill, bw, fill, drainColor(remS));
   drawTime(remS, W / 2, by + bh / 2, bw - 8, std::min(isTall() ? 60 : 90, bh - 4));
-  if (isTall()) drawStatus(1, top_left, top_right, prof().compact ? 11 : 1);
-  else drawStatus(H - 1, bottom_left, bottom_right, H - 1);
+  if (isTall()) drawStatus(1, top_left, top_right);
+  else drawStatus(H - 1, bottom_left, bottom_right);
   noticeShown = (int32_t)(noticeUntil - millis()) > 0;
   if (noticeShown) {  // banner over the time
     const char* msg = noticeMsg;
