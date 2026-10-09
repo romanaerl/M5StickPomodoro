@@ -84,6 +84,8 @@
       <li>Press <b>Install</b> and wait. The device restarts by itself when the install is done.</li>
     </ol>
     <p class="note">Updating keeps your saved settings. One firmware fits every supported model; the board is detected at boot.</p>
+    <p class="note">This page counts visits, connections and successful installs anonymously with
+      <a href="https://www.goatcounter.com">GoatCounter</a> (no cookies, no personal data).</p>
     <p class="note"><b>macOS:</b> if the port is busy or nothing connects, run <code>killall scrod</code> in Terminal (the VoiceOver braille service grabs new USB serial ports) and close any other program that has the port open.</p>
   </section>
   <!-- /install -->
@@ -97,5 +99,43 @@ __DOCS__
     <a href="https://github.com/romanaerl/M5StickPomodoro">source on GitHub</a>
   </footer>
 </main>
+
+<!-- Anonymous counters (GoatCounter, no cookies): page views are counted by count.js itself. -->
+<script data-goatcounter="https://m5stickpomodoro.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
+<script>
+  // Install counters. "install-connect": the install dialog opened, i.e. a port was picked after Connect.
+  // "install-finished" / "install-error": the result of flashing. ESP Web Tools has no public event for
+  // this, so the dialog's internal `_installState` is watched (esp-web-tools 10.4.0, pinned above;
+  // re-check this after upgrading it).
+  (function () {
+    function count(path, title) {
+      if (window.goatcounter && window.goatcounter.count) {
+        window.goatcounter.count({ path: path, title: title, event: true });
+      }
+    }
+    new MutationObserver(function (mutations) {
+      mutations.forEach(function (m) {
+        m.addedNodes.forEach(function (el) {
+          if (el.tagName !== "EWT-INSTALL-DIALOG") return;
+          count("install-connect", "Connect: port picked");
+          var reported = false;
+          var timer = setInterval(function () {
+            if (!el.isConnected) { clearInterval(timer); return; }
+            var st = el._installState, s = st && st.state;
+            if (s === "finished" || s === "error") {
+              if (!reported) {
+                reported = true;
+                if (s === "finished") count("install-finished", "Install finished");
+                else count("install-error", "Install error: " + (st.message || "unknown"));
+              }
+            } else if (s) {
+              reported = false;  // another install in the same dialog
+            }
+          }, 500);
+        });
+      });
+    }).observe(document.body, { childList: true });
+  })();
+</script>
 </body>
 </html>
