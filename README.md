@@ -40,7 +40,14 @@ You control it mostly by **how the device is placed**: put it face down to pause
 - **B** → set a length and start.
 - **Do nothing** → after 2 min it goes to sleep. Flip it or press M5 later.
 
-**Flashing** (supported: **M5StickC Plus** and **M5StickC**; one firmware for both)
+**Supported models** (one firmware for all; the board is detected at boot)
+
+| Model | Notes |
+|---|---|
+| **M5StickC Plus v1.1** | Main target; all features as described here. |
+| **M5StickC (original)** | No buzzer: the red LED blinks instead of beeping, and the power button's short press switches the LED (`LED ON` / `LED OFF`). Smaller 80×160 screen: compact status line, in portrait on two lines. Only units with the MPU6886 IMU (early SH200Q units are not supported). |
+
+**Flashing**
 1. Install [PlatformIO](https://platformio.org/).
 2. Connect the device over USB and switch it on.
 3. Run `scripts/flash.sh` from the repository folder.
