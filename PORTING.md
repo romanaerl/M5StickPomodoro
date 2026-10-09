@@ -1,25 +1,54 @@
 # Porting to other M5Stick models
 
-The firmware was developed and tested on the **M5StickC Plus** only. It talks to several chips directly
-(AXP192, MPU6886, BM8563) and relies on ESP32-classic deep-sleep wake sources, so other models need changes.
-This document lists what to check and change for each model.
+## Supported models
 
-> None of the steps below have been tested on real hardware. Treat them as a checklist, not as a verified recipe.
+| Model | Status |
+|---|---|
+| **M5StickC Plus** | Main target; developed and tested on it. |
+| **M5StickC** (original) | Supported and tested; see [its notes](#m5stickc-original). |
+
+One firmware runs on all of them. At boot M5Unified detects the board and the firmware picks the matching **board
+profile** from [`src/boards.h`](src/boards.h). The boot log shows it, e.g. `profile=M5StickC`.
+
+## Adding a board profile (similar models)
+
+A model that has the same chips and pinout as the M5StickC (ESP32, AXP192, MPU6886, BM8563, buttons on GPIO37/39, IMU
+interrupt on GPIO35) only needs a new row in `PROFILES` in [`src/boards.h`](src/boards.h):
+
+| Field | Meaning |
+|---|---|
+| `board` | the M5Unified board id (`m5::board_t::...`) that `M5.getBoard()` returns for it |
+| `name` | short display name; used in the boot log and by `scripts/flash.sh` (`--expect`) |
+| `compact` | `true` for a small 80×160 panel: compact status line, thinner digit halo |
+| `buzzerPin` | passive buzzer GPIO, or `-1` if there is none: the red LED then signals instead, and the power button's short press switches the LED |
+| `ledPin` | red LED GPIO (active low) |
+| `rotation` | `setRotation()` value for each layout: WIDE, WIDE_FLIP, TALL, TALL_FLIP, FLAT |
+| `axis` / `sign` | which raw accelerometer axis, with which sign, gives this firmware's x, y, z |
+
+Steps:
+
+1. Add the row, build, flash with `scripts/flash.sh`, and check the boot log shows `profile=<your name>`.
+2. Calibrate the axes (step 0 below). Every pose must give the expected axis with +1 g.
+3. Check that every pose shows an upright image. Fix `rotation` if one does not.
+4. Check the status line fits the panel, and that the minute glance is visible. On the Plus the first visible
+   backlight level is 7; adjust `GLANCE_LEVELS` in `main.cpp` if your panel differs.
+5. Run a short session (`scripts/flash.sh --env test`) to the end: the signal (beep or LED) and the blinking screen.
+
+Models with a different power chip, IMU or pinout need code changes as well; the sections below list them.
+
+> The Plus2 and StickS3 sections have not been tested on real hardware. Treat them as a checklist, not as a verified recipe.
 
 ## Hardware-specific places in `src/main.cpp`
 
 | What | Where | M5StickC Plus assumption |
 |---|---|---|
-| Pins | `PIN_INT`, `PIN_BTN_A`, `PIN_BTN_B`, `PIN_BUZZ` | GPIO35 IMU/RTC INT, GPIO37 button A, GPIO39 button B, GPIO2 buzzer |
+| Pins | `PIN_INT`, `PIN_BTN_A`, `PIN_BTN_B`; `buzzerPin` / `ledPin` in the profile | GPIO35 IMU/RTC INT, GPIO37 button A, GPIO39 button B, GPIO2 buzzer, GPIO10 LED |
 | PMIC | `deepSleep()`, `setup()` (`AXP`, register `0x12`), `beep()` (`Axp192.setEXTEN`), `backlightLevel()` (LDO2), `powerKeyPressed()` (register `0x46`) | AXP192 at I2C `0x34`; LDO3 = LCD logic, LDO2 = backlight, EXTEN powers the buzzer |
 | IMU | `imuInit()`, `imuTapSensitive()`, `readAccel()`, `imuMotion()` | MPU6886 at `0x68`, raw register access, wake-on-motion on GPIO35 |
-| Axes | `layoutOf()`, `LAYOUT_ROTATION[]`, `DOWN_G` / `VISIBLE_G` | +z screen up, +x long edge A up, −y USB up |
+| Axes | `axis` / `sign` / `rotation` in the profile; `layoutOf()`, `DOWN_G` / `VISIBLE_G` | +z screen up, +x long edge A up, −y USB up |
 | RTC | `rtcSeconds()`, `rtcInit()` | BM8563 at `0x51` |
 | Deep-sleep wake | `deepSleep()` | ext0 on GPIO35 (IMU), ext1 on GPIO37 (button A) |
-| Display geometry | `render()`, `drawTime()` | 135×240 panel; strip and padding values are tuned for it |
-
-M5Unified detects the board automatically (`M5.getBoard()`), so the cleanest way to support several models
-is to branch on the board type in the places above.
+| Display geometry | `render()`, `drawTime()`; `compact` in the profile | 135×240 panel (80×160 with `compact`) |
 
 ## Step 0: calibrate the axes on any new model
 
@@ -28,25 +57,23 @@ The accelerometer orientation depends on how the chip sits on the PCB, so measur
 1. Flash, open `pio device monitor`, and put the device in each pose. Every time the screen turns on, the log prints a
    line like `screen on: 24:00 layout=0 ... acc=0.98,-0.01,0.05`. The pose changes make the screen turn on.
 2. Note which axis reads ≈ +1 g in each pose: screen up, each long edge, each end.
-3. Update `layoutOf()` (which axis selects which layout) and `LAYOUT_ROTATION[]` (which `setRotation()` value makes the
-   image upright in that pose).
+3. Set `axis` / `sign` in the board profile so that the firmware's axes match the convention (+z screen up, +x long
+   edge A up, −y USB up), and `rotation` so that each pose shows an upright image.
 4. If "screen up" is not +z, change the z checks (`DOWN_G`, `VISIBLE_G`, `confirmPose()`, `runStep()`, `finishedStep()`).
 
 ## M5StickC (original)
 
-Closest to the Plus: same ESP32-PICO-D4, AXP192, BM8563 and GPIO35/37/39 pinout.
+**Supported and tested.** Same ESP32-PICO-D4, AXP192, MPU6886, BM8563 and GPIO35/37/39 pinout as the Plus, and the same
+accelerometer axes and display rotations (measured on the device). Its profile differs in:
 
-- **Display** is an ST7735S 80×160. M5GFX handles the panel, but the layout constants in `render()` (18 px status strip,
-  frame margins, `drawTime()` maximum height) were tuned for 135×240. Re-check them; a smaller status font or no
-  battery percentage may be needed.
-- **No buzzer.** `beep()` will be silent. Replace it with something visible, e.g. blink the red LED on GPIO10
-  (active low), or rely on the blinking screen alone.
-- **IMU:** most units have an MPU6886, but early units shipped with an **SH200Q**. Check `M5.Imu.getType()` or read
-  `WHO_AM_I` (`0x75` on the MPU6886 returns `0x19`). The SH200Q needs a different `imuInit()` and has no equivalent
-  wake-on-motion setup, so it would run in the polling fallback (`womOk = false`).
-- The boot self-test (`IMU INT self-test`) tells you whether the IMU interrupt reaches GPIO35. If it fails, the firmware
-  automatically polls the orientation once a second in light sleep instead of deep sleeping.
-- Battery is smaller (≈95 mAh), so expect proportionally shorter runtime.
+- **Display:** ST7735S 80×160 (`compact`). The status line uses a smaller font, and in portrait it takes two lines:
+  the mode on the first, battery and flags on the second. Digit sizes follow the panel size.
+- **No buzzer** (`buzzerPin = -1`). Signals use the same patterns on the red LED (GPIO10). The LED also blinks with the
+  screen after a session ends. The power button's short press switches the LED (`LED ON` / `LED OFF`, flag `NO LED`).
+- **Battery** is smaller (≈95 mAh), so expect proportionally shorter runtime.
+- **Early units** shipped with an **SH200Q** IMU instead of the MPU6886. The boot log prints `IMU WHO_AM_I`
+  (`0x19` = MPU6886). The SH200Q is not supported: it needs a different `imuInit()` and has no equivalent
+  wake-on-motion.
 
 ## M5StickC Plus2
 
@@ -94,5 +121,5 @@ to rewrite the hardware layer:
 3. Face down pauses; turning it back resumes from the same time.
 4. On battery (USB unplugged), the device survives deep sleep and wakes up. This is critical on the Plus2 because of the
    GPIO4 power hold.
-5. Running a short session (`pio run -e test -t upload`) ends with a beep (or the replacement signal) and a blinking
+5. Running a short session (`scripts/flash.sh --env test`) ends with a beep (or the replacement signal) and a blinking
    screen.

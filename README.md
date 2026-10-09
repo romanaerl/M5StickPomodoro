@@ -1,11 +1,11 @@
-# simplePomodoro
+# M5StickPomodoro
 
 A standalone, battery-friendly Pomodoro timer for the **M5StickC Plus**.
 
 You control it mostly by **how the device is placed**: put it face down to pause, stand it on its end to see a big countdown bar, tap the table to glance at it. Three buttons cover the rest. It needs no phone, no Wi-Fi, no Bluetooth and no cloud. Flash it once and it just works.
 
-> Developed and tested on the M5StickC Plus (ESP32-PICO-D4, AXP192, MPU6886, BM8563, ST7789 135×240).
-> Other M5Stick models need changes; see [PORTING.md](PORTING.md).
+> **Supported models:** M5StickC Plus (main target) and the original M5StickC (no buzzer: it signals with its red LED).
+> One firmware detects the board at boot. Adding a similar model is one row in [`src/boards.h`](src/boards.h); see [PORTING.md](PORTING.md).
 
 ![M5StickC Plus controls: power button on the left side, button B on the right side, M5 button under the screen, USB-C at the bottom](docs/device-r5.svg)
 
@@ -39,6 +39,14 @@ You control it mostly by **how the device is placed**: put it face down to pause
 - **M5** → same mode (press again within 5 s to switch).
 - **B** → set a length and start.
 - **Do nothing** → after 2 min it goes to sleep. Flip it or press M5 later.
+
+**Flashing** (supported: **M5StickC Plus** and **M5StickC**; one firmware for both)
+1. Install [PlatformIO](https://platformio.org/).
+2. Connect the device over USB and switch it on.
+3. Run `scripts/flash.sh` from the repository folder.
+4. Choose the device from the list, check what the script found (model, chip, current firmware), and confirm.
+
+Details: [Build and flash](#build-and-flash).
 
 ---
 
@@ -232,27 +240,31 @@ Power-on always starts a fresh WORK session. Settings are written to flash only 
 
 You need [PlatformIO](https://platformio.org/), either the CLI or the VS Code extension. PlatformIO downloads everything else: the `espressif32@6.4.0` platform and the `M5Unified@0.2.25` library (with M5GFX).
 
-1. Connect the M5StickC Plus over USB and **switch it on**. The USB serial port only exists while the device is powered.
-2. Build and flash. PlatformIO finds the port when a single board is connected:
+1. Connect the M5Stick over USB and **switch it on**. The USB serial port only exists while the device is powered.
+2. Flash with the helper script:
    ```bash
-   pio run -t upload
+   scripts/flash.sh
    ```
-   With several serial devices, list them and pass the port explicitly:
-   ```bash
-   pio device list
-   ```
-   ```bash
-   pio run -t upload --upload-port /dev/cu.usbserial-XXXX
-   ```
+   It lists the connected devices and lets you **choose one**; the others are not touched. Then it checks the chosen
+   device and shows its chip, flash size, MAC, model and current firmware. It restarts the device once to read its
+   boot log. It flashes only after you confirm.
+   - `--port /dev/cu.usbserial-XXXX` picks the device directly.
+   - `--expect "M5StickC"` refuses to flash unless the device is identified as that model.
+   - `--yes` skips the questions; `--list` only lists the devices; `--env test` flashes the test build.
+   - On macOS, the VoiceOver braille service (`scrod`) grabs new USB serial ports and blocks flashing. The script stops it
+     when it holds the chosen port.
+
+   Plain PlatformIO works too: `pio run -t upload --upload-port /dev/cu.usbserial-XXXX`.
 3. Optionally, watch the log:
    ```bash
    pio device monitor
    ```
-   On boot you should see `IMU INT self-test: asserted=1 released=1` and `WORK: new 25 min session`.
+   On boot you should see `profile=M5StickC Plus` (or `M5StickC`), `IMU INT self-test: asserted=1 released=1` and
+   `WORK: new 25 min session`.
 
 A test build with a 2-minute default WORK session:
 ```bash
-pio run -e test -t upload
+scripts/flash.sh --env test
 ```
 Lengths already set with the B button are stored in flash and override the defaults. The defaults come from `-DSESSION_MIN=25` and `-DBREAK_MIN=5`.
 
@@ -299,8 +311,10 @@ Found while building this on the device:
 ## Project layout
 
 ```
-platformio.ini   environments: m5stick-c-plus (default) and test (2-minute WORK session)
-src/main.cpp     the whole firmware
-PORTING.md       notes on running it on other M5Stick models
+platformio.ini   environments: m5stick-c-plus (default, all supported models) and test (2-minute WORK session)
+src/main.cpp     the firmware
+src/boards.h     board profiles: one row per supported model
+scripts/flash.sh choose a connected device, check it and flash it (scripts/flash.py does the work)
+PORTING.md       supported models, adding a board profile, notes on other M5Stick models
 docs/            the diagrams used in this README (SVG)
 ```

@@ -1,4 +1,8 @@
 // Low-power Pomodoro timer for M5StickC Plus (ESP32-PICO-D4, AXP192, MPU6886, BM8563, ST7789).
+// Also runs on the original M5StickC (80x160 ST7735S, no buzzer): detected at boot, it gets a compact
+// status line and signals with the red LED instead of beeps (the LED also blinks with the FINISHED
+// screen, and the power key's short press switches the LED instead of the sound). Same chips and
+// axes otherwise.
 //
 // RUNNING  : any orientation except face down. Light sleep between events. At every minute mark
 //            the screen fades in and out over 5 s showing only the minutes; on a layout change or a
@@ -50,7 +54,6 @@ constexpr uint32_t GLANCE_STEP_MS  = 1000;
 constexpr gpio_num_t PIN_INT   = GPIO_NUM_35;  // MPU6886 INT (shared with BM8563 INT), active low
 constexpr gpio_num_t PIN_BTN_A = GPIO_NUM_37;  // front "M5" button, active low
 constexpr gpio_num_t PIN_BTN_B = GPIO_NUM_39;  // side button, active low
-constexpr int        PIN_BUZZ  = 2;
 
 constexpr uint8_t  MPU = 0x68, RTC_ADDR = 0x51, AXP = 0x34;
 constexpr uint32_t I2C_HZ = 400000;
@@ -70,7 +73,9 @@ constexpr uint8_t ODR_DIV = 79, ODR_DIV_TAP = 9;  // 1 kHz / (1 + div): 12.5 Hz,
 enum State : uint8_t { RUNNING = 0, PAUSED = 1, FINISHED = 2 };
 enum Mode : uint8_t { WORK = 0, BREAK = 1 };
 enum Layout : uint8_t { WIDE = 0, WIDE_FLIP = 1, TALL = 2, TALL_FLIP = 3, FLAT = 4 };
-constexpr uint8_t LAYOUT_ROTATION[] = {1, 3, 2, 0, 1};
+
+// ---------- board profiles: see boards.h ----------
+#include "boards.h"
 
 constexpr uint32_t MAGIC = 0x504F4D33;
 RTC_DATA_ATTR uint32_t rtcMagic;
@@ -83,6 +88,7 @@ RTC_DATA_ATTR bool     soundOn = true;
 RTC_DATA_ATTR bool     tapFlat = false;  // tap-to-wake in the horizontal poses (flat, long edges)
 RTC_DATA_ATTR bool     womOk;         // GPIO35 interrupt line verified at cold boot
 RTC_DATA_ATTR bool     finishedDown;  // FINISHED: has been face down since the session ended
+RTC_DATA_ATTR uint8_t  profileIdx;    // PROFILES row; set at cold boot, used before M5.begin() after sleep
 RTC_DATA_ATTR uint16_t sleepWakes;    // diagnostics: deep-sleep wakes that went back to sleep
 static uint16_t motionEvents;         // diagnostics: WOM interrupts while running
 
@@ -100,6 +106,9 @@ static bool     poseChanging = false;
 static bool     noticeShown = false;
 static const char* noticeMsg = "";
 static bool     noticeOn = false;
+
+static const BoardProfile& prof() { return PROFILES[profileIdx]; }
+static bool hasBuzzer() { return prof().buzzerPin >= 0; }
 
 // ---------- low level ----------
 static void wr(uint8_t addr, uint8_t reg, uint8_t v) { M5.In_I2C.writeRegister8(addr, reg, v, I2C_HZ); }
@@ -167,8 +176,9 @@ struct Accel { float x, y, z; };
 static Accel readAccel() {
   uint8_t b[6];
   M5.In_I2C.readRegister(MPU, 0x3B, b, 6, I2C_HZ);
-  auto g = [&](int i) { return (int16_t)(b[i] << 8 | b[i + 1]) / 8192.0f; };  // +-4 g
-  return {g(0), g(2), g(4)};
+  auto g = [&](int axis) { return (int16_t)(b[2 * axis] << 8 | b[2 * axis + 1]) / 8192.0f; };  // +-4 g
+  const BoardProfile& p = prof();
+  return {p.sign[0] * g(p.axis[0]), p.sign[1] * g(p.axis[1]), p.sign[2] * g(p.axis[2])};
 }
 
 // Layout for a visible pose, or -1 while tilted in between.
@@ -287,14 +297,18 @@ static void drawTime(int remS, int cx, int cy, int maxW, int maxH) {
   canvas.setTextSize(1);
   float size = std::min((float)maxW / canvas.textWidth("88:88"), (float)maxH / canvas.fontHeight());
   if (minutesOnly) {  // two digits: as large as the landscape MM:SS, or as wide as the bar allows
-    float wide = std::min(216.0f / canvas.textWidth("88:88"), 90.0f / canvas.fontHeight());
+    // Landscape MM:SS limits (216 x 90 px on the Plus), derived from the panel size.
+    const int lng = std::max(canvas.width(), canvas.height()), sht = std::min(canvas.width(), canvas.height());
+    const int wideW = lng - 24, wideH = std::min(90, sht - (prof().compact ? 10 : 18) - 20);
+    float wide = std::min((float)wideW / canvas.textWidth("88:88"), (float)wideH / canvas.fontHeight());
     size = std::min((float)maxW / canvas.textWidth("88"), wide);
   }
   canvas.setTextSize(size);
   canvas.setTextDatum(middle_center);
   canvas.setTextColor(TFT_BLACK);  // black halo keeps digits readable on top of the bar
-  for (int dx = -3; dx <= 3; dx += 3)
-    for (int dy = -3; dy <= 3; dy += 3) canvas.drawString(buf, cx + dx, cy + dy);
+  const int h = prof().compact ? 2 : 3;
+  for (int dx = -h; dx <= h; dx += h)
+    for (int dy = -h; dy <= h; dy += h) canvas.drawString(buf, cx + dx, cy + dy);
   canvas.setTextColor(TFT_WHITE);
   canvas.drawString(buf, cx, cy);
 }
@@ -306,16 +320,19 @@ static int readBattery() {
 }
 
 // Status: state label on the left; battery (with a bright dot when low) on the right, MUTE / TAP
-// flags just left of the battery.
-static void drawStatus(int y, uint8_t datumL, uint8_t datumR) {
+// flags just left of the battery. `yR` puts the right part on its own line (narrow StickC portrait).
+static void drawStatus(int y, uint8_t datumL, uint8_t datumR, int yR) {
   char buf[16], flags[16];
   // TAP only matters in landscape: standing on an end, tap-to-wake is always on.
-  snprintf(flags, sizeof flags, "%s%s", soundOn ? "" : "MUTE", tapFlat && !isTall() ? (soundOn ? "TAP" : " TAP") : "");
-  canvas.setFont(&fonts::Font2);
+  snprintf(flags, sizeof flags, "%s%s", soundOn ? "" : hasBuzzer() ? "MUTE" : "NO LED",
+           tapFlat && !isTall() ? (soundOn ? "TAP" : " TAP") : "");
+  if (prof().compact) canvas.setFont(&fonts::Font0); else canvas.setFont(&fonts::Font2);
   canvas.setTextSize(1);
   canvas.setTextColor(state == FINISHED ? TFT_RED : TFT_LIGHTGREY);
   canvas.setTextDatum(datumL);
   canvas.drawString(stateLabel(), 4, y);
+  y = yR;
+  const int r = prof().compact ? 3 : 6;  // low-battery dot radius
   int x = canvas.width() - 4;  // right edge of what is still to be drawn
   if (battery >= 0) {  // low battery: bright dot + coloured percentage, visible from a distance
     uint16_t c = battery < 20 ? TFT_RED : battery < 40 ? TFT_YELLOW : TFT_LIGHTGREY;
@@ -326,8 +343,8 @@ static void drawStatus(int y, uint8_t datumL, uint8_t datumR) {
     x -= canvas.textWidth(buf) + 4;
     if (battery < 40) {
       int cy = datumR == top_right ? y + canvas.fontHeight() / 2 : y - canvas.fontHeight() / 2;
-      canvas.fillCircle(x - 6, cy, 6, c);
-      x -= 16;
+      canvas.fillCircle(x - r, cy, r, c);
+      x -= 2 * r + 4;
     }
   }
   canvas.setTextColor(TFT_LIGHTGREY);
@@ -351,10 +368,12 @@ static uint16_t drainColor(int remS) {
 }
 
 // Rounded frame with a bar inside whose level drops every second with the remaining time; time on
-// top of it. The status line takes an 18 px strip: at the top in portrait, at the bottom in landscape.
+// top of it. The status line takes a strip at the top in portrait, at the bottom in landscape: 18 px
+// on the Plus; on the StickC 10 px, or 20 px (two lines) in portrait.
 static void render(int remS) {
   if (battery < 0) battery = readBattery();
-  constexpr int STRIP = 18, M = 3, PAD = 5;  // status strip, frame margin, frame-to-bar padding
+  constexpr int M = 3, PAD = 5;  // frame margin, frame-to-bar padding
+  const int STRIP = !prof().compact ? 18 : isTall() ? 20 : 10;
   const int W = canvas.width(), H = canvas.height();
   const int fy = (isTall() ? STRIP : 0) + M, fw = W - 2 * M, fh = H - STRIP - 2 * M;
   const int bx = M + PAD, by = fy + PAD, bw = fw - 2 * PAD, bh = fh - 2 * PAD;
@@ -364,9 +383,9 @@ static void render(int remS) {
   canvas.drawRoundRect(M + 1, fy + 1, fw - 2, fh - 2, 7, TFT_WHITE);
   canvas.fillRect(bx, by, bw, bh - fill, canvas.color565(30, 30, 30));
   canvas.fillRect(bx, by + bh - fill, bw, fill, drainColor(remS));
-  drawTime(remS, W / 2, by + bh / 2, bw - 8, isTall() ? 60 : 90);
-  if (isTall()) drawStatus(1, top_left, top_right);
-  else drawStatus(H - 1, bottom_left, bottom_right);
+  drawTime(remS, W / 2, by + bh / 2, bw - 8, std::min(isTall() ? 60 : 90, bh - 4));
+  if (isTall()) drawStatus(1, top_left, top_right, prof().compact ? 11 : 1);
+  else drawStatus(H - 1, bottom_left, bottom_right, H - 1);
   noticeShown = (int32_t)(noticeUntil - millis()) > 0;
   if (noticeShown) {  // banner over the time
     const char* msg = noticeMsg;
@@ -387,7 +406,7 @@ static void render(int remS) {
 static void setLayout(uint8_t l) {
   layout = l;
   imuTapSensitive(isTapPose());
-  M5.Display.setRotation(LAYOUT_ROTATION[l]);
+  M5.Display.setRotation(prof().rotation[l]);
   canvas.deleteSprite();
   canvas.setColorDepth(16);
   canvas.createSprite(M5.Display.width(), M5.Display.height());
@@ -420,7 +439,8 @@ static uint32_t tapSaveAt = 0;
 static void applyPowerKey(uint8_t key) {
   if (key == KEY_SHORT) {
     soundOn = !soundOn;
-    notice(soundOn ? "SOUND ON" : "SOUND OFF", soundOn);
+    if (hasBuzzer()) notice(soundOn ? "SOUND ON" : "SOUND OFF", soundOn);
+    else notice(soundOn ? "LED ON" : "LED OFF", soundOn);
     saveSettings();
   } else {
     tapFlat = !tapFlat;
@@ -464,7 +484,15 @@ static void screenWake(int remS, uint32_t ms = SCREEN_ON_MS) {
   }
 }
 
+// Red LED (StickC only; active low). Released to input when off.
+static void led(bool on) {
+  if (hasBuzzer()) return;
+  if (on) { pinMode(prof().ledPin, OUTPUT); digitalWrite(prof().ledPin, LOW); }
+  else pinMode(prof().ledPin, INPUT);
+}
+
 static void screenSleep() {
+  led(false);
   M5.Display.setBrightness(0);  // AXP192 LDO2 (backlight) off
   M5.Display.sleep();           // ST7789 SLPIN
   screenOn = false;
@@ -478,6 +506,7 @@ static int remainingS() {
 
 // Ends the FINISHED blink: steady backlight and the normal 5 s screen time.
 static void steadyScreen() {
+  led(false);
   if (!screenOn) return;
   M5.Display.setBrightness(BRIGHTNESS);
   screenOffAt = millis() + SCREEN_ON_MS;
@@ -560,16 +589,25 @@ static void pause(uint32_t since) {
 // The buzzer is powered from the AXP192 5 V boost (EXTEN), so it is enabled only while beeping.
 static void beep(int n, int onMs, int offMs) {
   if (!soundOn) return;
+  if (!hasBuzzer()) {  // original M5StickC: the same pattern on the red LED
+    pinMode(prof().ledPin, OUTPUT);
+    for (int i = 0; i < n; i++) {
+      digitalWrite(prof().ledPin, LOW);  delay(onMs);
+      digitalWrite(prof().ledPin, HIGH); if (i + 1 < n) delay(offMs);
+    }
+    pinMode(prof().ledPin, INPUT);
+    return;
+  }
   M5.Power.Axp192.setEXTEN(true);
   delay(20);
   ledcSetup(0, 4000, 8);
-  ledcAttachPin(PIN_BUZZ, 0);
+  ledcAttachPin(prof().buzzerPin, 0);
   for (int i = 0; i < n; i++) {
     ledcWriteTone(0, 4000); delay(onMs);
     ledcWriteTone(0, 0);    if (i + 1 < n) delay(offMs);
   }
-  ledcDetachPin(PIN_BUZZ);
-  pinMode(PIN_BUZZ, INPUT);
+  ledcDetachPin(prof().buzzerPin);
+  pinMode(prof().buzzerPin, INPUT);
   M5.Power.Axp192.setEXTEN(false);
 }
 
@@ -618,6 +656,13 @@ void setup() {
   cfg.clear_display = true;
   M5.begin(cfg);
   adc_power_release();  // M5Unified keeps the SAR ADC powered for GPIO36/39 debouncing
+  if (!warm) {  // pick the board profile (deep-sleep wakes keep the one chosen at cold boot)
+    profileIdx = 0;
+    for (size_t i = 0; i < sizeof PROFILES / sizeof PROFILES[0]; i++)
+      if (PROFILES[i].board == M5.getBoard()) profileIdx = i;
+    if (PROFILES[profileIdx].board != M5.getBoard())
+      Serial.printf("Unknown board %d: using the %s profile\n", (int)M5.getBoard(), PROFILES[0].name);
+  }
   M5.Display.setBrightness(0);
   pinMode(PIN_BTN_A, INPUT);
   pinMode(PIN_BTN_B, INPUT);
@@ -631,12 +676,13 @@ void setup() {
     wr(AXP, 0x36, (rd(AXP, 0x36) & ~0x30) | 0x10);  // power key long press = 1.5 s
     rtcInit();
     imuInit();
+    Serial.printf("IMU WHO_AM_I=0x%02x (MPU6886 = 0x19)\n", rd(MPU, 0x75));
     womOk = imuSelfTest();
     loadSettings();
     mode = WORK;
     startSession();
-    Serial.printf("battery=%d%% womOk=%d work=%d break=%d sound=%d tap=%d\n", M5.Power.getBatteryLevel(),
-                  womOk, lengthMin[WORK], lengthMin[BREAK], soundOn, tapFlat);
+    Serial.printf("profile=%s battery=%d%% womOk=%d work=%d break=%d sound=%d tap=%d\n", prof().name,
+                  M5.Power.getBatteryLevel(), womOk, lengthMin[WORK], lengthMin[BREAK], soundOn, tapFlat);
   } else if (state == PAUSED) {
     resume(since);
   } else if (state == FINISHED) {  // button A, or face down and back up: same mode again
@@ -800,7 +846,9 @@ static void finishedStep() {
   followLayout(a, 0);
   if ((int32_t)(millis() - screenOffAt) >= 0) { screenSleep(); return; }
   uint32_t t = millis() - finishedAt;
-  M5.Display.setBrightness((t / BLINK_MS) % 2 ? 0 : BRIGHTNESS);  // backlight only, panel stays awake
+  const bool lit = (t / BLINK_MS) % 2 == 0;
+  M5.Display.setBrightness(lit ? BRIGHTNESS : 0);  // backlight only, panel stays awake
+  led(lit && soundOn);                             // StickC: the LED blinks along
   flushTapSave();
   nap(std::min<uint32_t>(CONFIRM_STEP_MS, BLINK_MS - t % BLINK_MS), true, false);
 }
