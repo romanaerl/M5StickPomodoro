@@ -60,6 +60,31 @@
     .markdown th { background: var(--card); font-weight: 600; }
     .markdown tr:nth-child(2n) td { background: color-mix(in srgb, var(--card) 50%, transparent); }
 
+    /* "No port selected" help dialog (replaces ESP Web Tools' generic one) */
+    dialog.help {
+      border: 1px solid var(--line); border-radius: 12px; padding: 0; width: min(560px, calc(100vw - 32px));
+      background: var(--bg); color: var(--fg); box-shadow: 0 12px 40px rgba(0, 0, 0, .35);
+    }
+    dialog.help::backdrop { background: rgba(0, 0, 0, .45); }
+    .help .body { padding: 20px 24px 8px; }
+    .help h2 { margin: 0 0 8px; font-size: 22px; }
+    .help ul { padding-left: 22px; margin: 8px 0 12px; }
+    .help li { margin: 6px 0; }
+    .help .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 12px 0 8px; }
+    .help .tabs button {
+      font: inherit; background: none; color: var(--muted); border: 0; border-bottom: 2px solid transparent;
+      padding: 6px 12px; cursor: pointer; margin-bottom: -1px;
+    }
+    .help .tabs button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); font-weight: 600; }
+    .help .panel[hidden] { display: none; }
+    .help .actions { display: flex; justify-content: flex-end; gap: 8px; padding: 8px 24px 20px; }
+    .help .actions button {
+      font: inherit; border-radius: 9999px; padding: 6px 18px; cursor: pointer;
+      border: 1px solid var(--line); background: none; color: var(--fg);
+    }
+    .help .actions .primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+    .help code { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; font-size: 14px; }
+
     footer { color: var(--muted); font-size: 14px; border-top: 1px solid var(--line); margin-top: 48px; padding-top: 16px; }
   </style>
 </head>
@@ -99,6 +124,85 @@ __DOCS__
     <a href="https://github.com/romanaerl/M5StickPomodoro">source on GitHub</a>
   </footer>
 </main>
+
+<dialog class="help" id="no-port-help" aria-labelledby="no-port-title">
+  <div class="body">
+    <h2 id="no-port-title">No port selected</h2>
+    <p>If the M5Stick was not in the list, check these first:</p>
+    <ul>
+      <li><b>Switch the device on.</b> Its USB port only appears while it is on (press the power button on the left side).</li>
+      <li>Use a USB cable that carries <b>data</b>, not a charge-only one, and plug it into this computer.</li>
+      <li><b>Close other programs that use the port:</b> a serial monitor, Arduino IDE or PlatformIO, another tab with this page.</li>
+    </ul>
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected="true" data-tab="mac">macOS</button>
+      <button role="tab" aria-selected="false" data-tab="win">Windows</button>
+      <button role="tab" aria-selected="false" data-tab="linux">Linux</button>
+    </div>
+    <div class="panel" data-panel="mac" role="tabpanel">
+      <ul>
+        <li>macOS's VoiceOver braille service (<code>scrod</code>) grabs new USB serial ports, so the browser cannot open
+          the port. Run this in Terminal, then press <b>Try again</b>:<br><code>killall scrod</code></li>
+        <li>If macOS asks <b>"Allow accessory to connect?"</b>, choose <b>Allow</b>.</li>
+        <li>No driver is needed: the port is listed as <code>cu.usbserial-…</code>.</li>
+      </ul>
+    </div>
+    <div class="panel" data-panel="win" role="tabpanel" hidden>
+      <ul>
+        <li>The port is listed as <b>COM…</b>. Windows 10 and 11 usually install the driver by themselves.</li>
+        <li>If the device is not listed, open <b>Device Manager</b>. If it shows under <i>Other devices</i> or with a
+          warning sign, install the driver for its USB chip:
+          <a href="https://www.wch-ic.com/downloads/CH343SER_EXE.html">CH9102 / CH343</a> (used on many M5Stack devices) or
+          <a href="https://ftdichip.com/drivers/vcp-drivers/">FTDI VCP</a>. Then replug the device.</li>
+      </ul>
+    </div>
+    <div class="panel" data-panel="linux" role="tabpanel" hidden>
+      <ul>
+        <li>The port is <code>/dev/ttyUSB0</code> or <code>/dev/ttyACM0</code>. Your user needs access to it:<br>
+          <code>sudo usermod -aG dialout $USER</code>, then log out and back in.</li>
+        <li>On Ubuntu the <code>brltty</code> braille service can grab USB serial adapters (like <code>scrod</code> on
+          macOS): <code>sudo apt remove brltty</code>, then replug the device.</li>
+        <li>Chromium installed as a snap needs USB access: <code>sudo snap connect chromium:raw-usb</code>.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="actions">
+    <button type="button" data-action="cancel">Cancel</button>
+    <button type="button" class="primary" data-action="retry">Try again</button>
+  </div>
+</dialog>
+
+<script>
+  // Replace ESP Web Tools' generic "No port selected" dialog (driver links for every ESP board) with
+  // help for this device, with macOS / Windows / Linux tabs. The library has no option for this, so its
+  // dialog element is swapped as soon as it is added (esp-web-tools 10.4.0, pinned above).
+  (function () {
+    var help = document.getElementById("no-port-help"), retry = null;
+    help.querySelectorAll("[role=tab]").forEach(function (tab) {
+      tab.addEventListener("click", function () {
+        help.querySelectorAll("[role=tab]").forEach(function (t) {
+          t.setAttribute("aria-selected", String(t === tab));
+        });
+        help.querySelectorAll(".panel").forEach(function (p) { p.hidden = p.dataset.panel !== tab.dataset.tab; });
+      });
+    });
+    help.querySelector("[data-action=cancel]").addEventListener("click", function () { help.close(); });
+    help.querySelector("[data-action=retry]").addEventListener("click", function () {
+      help.close();
+      if (retry) retry();  // opens the browser's port picker again (still inside this click)
+    });
+    new MutationObserver(function (mutations) {
+      mutations.forEach(function (m) {
+        m.addedNodes.forEach(function (el) {
+          if (el.tagName !== "EWT-NO-PORT-PICKED-DIALOG") return;
+          retry = el.doTryAgain;
+          el.remove();
+          help.showModal();
+        });
+      });
+    }).observe(document.body, { childList: true });
+  })();
+</script>
 
 <!-- Anonymous counters (GoatCounter, no cookies): page views are counted by count.js itself. -->
 <script data-goatcounter="https://m5stickpomodoro.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
