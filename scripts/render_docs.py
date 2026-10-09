@@ -58,9 +58,10 @@ def gallery(html):
     if len(imgs) < 2:
         return html
     first = f'<p><img src="{imgs[0][0]}" alt="{imgs[0][1]}" /></p>'
+    current = ' aria-current="true"'  # first thumbnail; outside the f-string for Python < 3.12
     thumbs = "".join(
         f'<button type="button" class="thumb" data-src="{src}" data-alt="{alt}" title="{alt}"'
-        f'{" aria-current=\"true\"" if i == 0 else ""}><img src="{src}" alt=""></button>'
+        f'{current if i == 0 else ""}><img src="{src}" alt=""></button>'
         for i, (src, alt) in enumerate(imgs))
     block = (f'<div class="gallery"><figure class="gallery-main"><img src="{imgs[0][0]}" alt="{imgs[0][1]}">'
              f'</figure><div class="gallery-thumbs" role="list">{thumbs}</div></div>')
