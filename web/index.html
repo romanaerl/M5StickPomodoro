@@ -36,6 +36,10 @@
     esp-web-install-button { --esp-tools-button-color: var(--accent); --esp-tools-button-text-color: var(--accent-fg); }
     .install ol { margin: 14px 0 8px; padding-left: 22px; }
     .install .note { color: var(--muted); font-size: 14px; margin: 6px 0 0; }
+    /* Browsers without Web Serial (phones, Safari, ...) only get the "use Chrome or Edge" message. */
+    esp-web-install-button[install-unsupported] ~ .install-steps { display: none; }
+    .unsupported { display: block; font-size: 17px; }
+    .unsupported small { display: block; color: var(--muted); font-size: 14px; margin-top: 6px; }
 
     /* Rendered README / PORTING, styled after GitHub's markdown */
     .markdown h2 { font-size: 24px; margin: 40px 0 16px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
@@ -100,9 +104,12 @@
   <section class="install" id="install">
     <h2>Install from the browser</h2>
     <esp-web-install-button manifest="manifest.json">
-      <span slot="unsupported">Your browser cannot talk to USB devices. Open this page in <b>Chrome</b> or <b>Edge</b> on a computer.</span>
+      <span slot="unsupported" class="unsupported">This browser cannot talk to USB devices. To install, open this page
+        in <b>Chrome</b> or <b>Edge</b> on a computer and connect the M5Stick to that computer.
+        <small>You can still read the guide below.</small></span>
       <span slot="not-allowed">Serial access needs a secure page (https).</span>
     </esp-web-install-button>
+    <div class="install-steps">
     <ol>
       <li>Connect the M5Stick over USB and <b>switch it on</b> (the port only exists while it is on).</li>
       <li>Press <b>Connect</b> and pick the port with <code>usbserial</code> in its name.</li>
@@ -112,6 +119,7 @@
     <p class="note">This page counts visits, connections and successful installs anonymously with
       <a href="https://www.goatcounter.com">GoatCounter</a> (no cookies, no personal data).</p>
     <p class="note"><b>macOS:</b> if the port is busy or nothing connects, run <code>killall scrod</code> in Terminal (the VoiceOver braille service grabs new USB serial ports) and close any other program that has the port open.</p>
+    </div>
   </section>
   <!-- /install -->
 
