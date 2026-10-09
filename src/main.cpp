@@ -529,36 +529,52 @@ static void startSession() {
 }
 
 // Button B: the first press shows the current length, each further press adds 1 min (auto-repeat
-// while held), wrapping 60 -> 1. The session starts 1 s after the last press.
+// while held), wrapping 60 -> 1. After 1 s without presses: if the length was changed, it is saved
+// and a new session starts; a single look-only press shows the length for that second, then the
+// countdown for the usual 5 s, without touching the session or the FINISHED blink.
 static void bumpLength() {
   lengthMin[mode] = lengthMin[mode] % 60 + 1;
   screenWake(lengthMin[mode] * 60);
 }
 
 static void adjustLength() {
+  const bool wasOn = screenOn;
+  const uint32_t prevOffAt = screenOffAt;
   steadyScreen();
   setting = true;
   const uint8_t before = lengthMin[mode];
   screenWake(before * 60);  // the first press only shows the current length
   render(before * 60);
-  bool first = true;
+  bool first = true, changed = false;
   uint32_t last = millis();
   do {
     if (digitalRead(PIN_BTN_B) == LOW) {
-      if (!first) bumpLength();
+      if (!first) { bumpLength(); changed = true; }
       first = false;
       uint32_t repeatAt = millis() + 500;
       while (digitalRead(PIN_BTN_B) == LOW) {
         nap(20, false);
-        if ((int32_t)(millis() - repeatAt) >= 0) { bumpLength(); repeatAt = millis() + 120; }
+        if ((int32_t)(millis() - repeatAt) >= 0) { bumpLength(); changed = true; repeatAt = millis() + 120; }
       }
       last = millis();
     }
     nap(20, false);
   } while (millis() - last < SET_TIMEOUT_MS);
   setting = false;
-  if (lengthMin[mode] != before) saveSettings();
-  startSession();
+  if (changed) {
+    if (lengthMin[mode] != before) saveSettings();
+    startSession();
+    return;
+  }
+  // Look only: back to the countdown (it kept running) with the usual 5 s screen time; the FINISHED
+  // blink goes on with its 2 min left unchanged.
+  if (state == FINISHED && wasOn) {
+    screenOffAt = prevOffAt;
+    render(0);
+  } else {
+    screenOffAt = millis() + SCREEN_ON_MS;
+    render(state == RUNNING ? remainingS() : 0);
+  }
 }
 
 static void resume(uint32_t since) {

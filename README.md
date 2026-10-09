@@ -26,7 +26,7 @@ You control it mostly by **how the device is placed**: put it face down to pause
 | Button | Press | Hold |
 |---|---|---|
 | **M5** (front, under the screen) | Restart the current mode. Press **again within 5 s** → switch WORK ⇄ BREAK. | — |
-| **B** (right side) | 1st press shows the length; each next press **+1 min** (1–60). Starts 1 s after the last press. | Adds minutes quickly. |
+| **B** (right side) | 1st press only shows the length for a second, then the countdown (the session keeps running). Each next press **+1 min** (1–60), and 1 s after the last press a new session starts with it. | Adds minutes quickly. |
 | **Power** (left side) | Off: switch on. On, screen lit: **sound on / off**. | **1.5 s**: tap-to-wake in horizontal poses on / off. **6 s**: switch off. |
 
 **Poses**
@@ -41,7 +41,7 @@ You control it mostly by **how the device is placed**: put it face down to pause
 - **Move it to another pose and hold it for 1 s** (edge A ⇄ edge B, or from its end onto its side) → the **other** mode starts: WORK → BREAK, BREAK → WORK.
 - **Face down, then face up** → the **same** mode starts again.
 - **M5** → same mode (press again within 5 s to switch).
-- **B** → set a length and start.
+- **B** → a single press shows the length (the blinking goes on); more presses set a new length and start.
 - **Do nothing** → after the 2 minutes of blinking it goes into deep sleep. Then only two things wake it: the **M5** button, or turning it **face down for about a second and back** to any visible pose. Both start the same mode again; changing the pose or pressing B no longer does anything.
 
 **Supported models** (one firmware for all; the board is detected at boot)
@@ -118,8 +118,8 @@ Details: [Build and flash](#build-and-flash).
 | Turn it **face up** (any visible pose) | Resumes from exactly where it paused. |
 | **M5** button (big, under the screen) | Restarts the current mode. |
 | **M5** again within 5 s (during the yellow / violet grace period) | Switches to the other mode and starts it. |
-| **B** button (right side), first press | Shows the current mode's length (`SET WORK` / `SET BREAK`). |
-| **B** further presses / hold | +1 minute per press (wraps 60 → 1); holding repeats quickly. The session starts 1 s after the last press. |
+| **B** button (right side), single press | Shows the current mode's length (`SET WORK` / `SET BREAK`) for a second, then the countdown for the usual 5 s: the session keeps running. During the finish blinking, the blinking goes on and its 2 minutes are not reset. |
+| **B** further presses / hold | +1 minute per press (wraps 60 → 1); holding repeats quickly. 1 s after the last press the new length is saved and a new session starts. |
 | **Power** button (left side), short press, screen on | Sound on / off (`SOUND ON` / `SOUND OFF`). |
 | **Power** button, hold ~1.5 s, screen on | Tap-to-wake in horizontal poses on / off (`TAP ON` / `TAP OFF`). |
 | Tap the table (tap poses) | Shows the full `MM:SS` for 5 s. |
@@ -155,7 +155,7 @@ Power-on always starts **WORK**. Switch modes with a second press of the M5 butt
 
 ### Starting a session and the grace period
 
-Every session — after power-on, after the M5 or B button, or after a mode switch — starts with a **5-second grace period**:
+Every session — after power-on, after the M5 button, after changing the length with B, or after a mode switch — starts with a **5-second grace period**:
 
 - A 25-minute session starts at **25:05** and a 5-minute session at **5:05**.
 - During those 5 seconds the bar is **yellow** (WORK) or **violet** (BREAK).
@@ -183,7 +183,7 @@ The timer keeps running in every pose where the screen faces you. To save batter
 3. During the blinking you can:
    - **move the device to another pose and hold it there for 1 second** (e.g. from one long edge to the other, or from standing on an end to lying on its side) → the **other** mode starts;
    - press **M5** → the same mode restarts (press again within 5 s to switch);
-   - press **B** → set a length and start;
+   - press **B** once → see the length (the blinking goes on); press it more → set a new length and start;
    - turn it **face down** → the screen turns off at once.
 4. If nobody does anything during the 2 minutes (or it is turned face down), the device goes into **deep sleep**:
    the screen is off and the timer does not run. Only two things wake it:
