@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Build the web installer site (GitHub Pages) into dist/web:
-#   index.html (web/index.html), manifest.json for ESP Web Tools, and the firmware parts.
+# Build the web installer site (GitHub Pages) into dist/web: the installer page with the README below
+# it, porting.html, the diagrams, manifest.json for ESP Web Tools, and the firmware parts.
+# The docs are rendered by scripts/render_docs.py, which needs markdown-it-py and
+# mdit-py-plugins (set DOCS_PYTHON to a Python that has them, if `python3` does not).
 #
 #   scripts/build_web.sh [VERSION]     VERSION defaults to `git describe --tags --always`
 #
@@ -23,7 +25,8 @@ rm -rf "$OUT"
 mkdir -p "$OUT"
 cp "$BUILD/bootloader.bin" "$BUILD/partitions.bin" "$BUILD/firmware.bin" "$OUT/"
 cp "$PKG/framework-arduinoespressif32/tools/partitions/boot_app0.bin" "$OUT/"
-sed "s/__VERSION__/$VERSION/g" web/index.html > "$OUT/index.html"
+# The pages: web/index.html with README.md below the install box, and PORTING.md.
+"${DOCS_PYTHON:-python3}" scripts/render_docs.py "$OUT" "$VERSION"
 cat > "$OUT/manifest.json" <<JSON
 {
   "name": "M5StickPomodoro",

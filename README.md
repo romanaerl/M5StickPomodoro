@@ -254,7 +254,7 @@ Power-on always starts a fresh WORK session. Settings are written to flash only 
 
 ### Web installer
 
-The **[web installer](https://romanaerl.github.io/M5StickPomodoro/)** (GitHub Pages, [ESP Web Tools](https://esphome.github.io/esp-web-tools/)) flashes the current release from Chrome or Edge with one button. It writes the bootloader, partition table and firmware at their own offsets and leaves the settings partition alone, so saved settings survive. It resets the device when done and releases the port. The page is published from the `production` branch by `.github/workflows/pages.yml`.
+The **[web installer](https://romanaerl.github.io/M5StickPomodoro/)** (GitHub Pages, [ESP Web Tools](https://esphome.github.io/esp-web-tools/)) flashes the current release from Chrome or Edge with one button. It writes the bootloader, partition table and firmware at their own offsets and leaves the settings partition alone, so saved settings survive. It resets the device when done and releases the port. Below the install button the page shows this README (and PORTING.md as a second page), rendered from the repository at build time. It is published from the `production` branch by `.github/workflows/pages.yml`.
 
 ### Without building: release image
 
@@ -350,6 +350,7 @@ scripts/flash.sh choose a connected device, check it and flash it (scripts/flash
 scripts/build_release.sh  build the single-file release image into dist/
 .github/workflows/release.yml  CI build; publishes a release with the image for every v* tag
 scripts/build_web.sh      build the web installer site into dist/web
+scripts/render_docs.py    render README.md and PORTING.md into the site, so it always matches the repository
 web/index.html            the web installer page
 .github/workflows/pages.yml    publishes the web installer to GitHub Pages from the production branch
 PORTING.md       supported models, adding a board profile, notes on other M5Stick models

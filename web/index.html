@@ -3,76 +3,99 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>M5StickPomodoro Installer</title>
-  <meta name="description" content="Install the M5StickPomodoro firmware on an M5StickC Plus or M5StickC from the browser.">
+  <title>M5StickPomodoro</title>
+  <meta name="description" content="A battery-friendly Pomodoro timer for the M5StickC Plus and M5StickC. Install it from the browser.">
   <script type="module" src="https://unpkg.com/esp-web-tools@10.4.0/dist/web/install-button.js?module"></script>
   <style>
     :root {
-      --bg: #ffffff; --fg: #1f2328; --muted: #57606a; --line: #d0d7de; --card: #f6f8fa;
-      --accent: #f26b1d; --accent-fg: #ffffff;
+      --bg: #ffffff; --fg: #1f2328; --muted: #59636e; --line: #d1d9e0; --card: #f6f8fa;
+      --link: #0969da; --accent: #f26b1d; --accent-fg: #ffffff; --quote: #59636e;
     }
     @media (prefers-color-scheme: dark) {
-      :root { --bg: #0d1117; --fg: #e6edf3; --muted: #9198a1; --line: #30363d; --card: #161b22; }
+      :root { --bg: #0d1117; --fg: #e6edf3; --muted: #9198a1; --line: #3d444d; --card: #151b23;
+              --link: #4493f8; --quote: #9198a1; }
     }
     * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
     body {
       margin: 0; background: var(--bg); color: var(--fg);
-      font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
     }
-    main { max-width: 760px; margin: 0 auto; padding: 32px 16px 48px; }
-    h1 { margin: 0 0 4px; font-size: 32px; }
-    .version { color: var(--muted); margin: 0 0 24px; }
-    h2 { margin: 32px 0 8px; font-size: 20px; }
+    main { max-width: 900px; margin: 0 auto; padding: 32px 16px 64px; }
+    a { color: var(--link); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    header h1 { margin: 0 0 4px; font-size: 34px; }
+    header .version { color: var(--muted); margin: 0 0 12px; }
+    header p { margin: 8px 0; }
+
     .install {
-      background: var(--card); border: 1px solid var(--line); border-radius: 12px;
-      padding: 20px; margin: 16px 0 8px;
+      background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--accent);
+      border-radius: 12px; padding: 20px 24px; margin: 24px 0 32px;
     }
+    .install h2 { margin: 0 0 12px; font-size: 22px; border: 0; padding: 0; }
     esp-web-install-button { --esp-tools-button-color: var(--accent); --esp-tools-button-text-color: var(--accent-fg); }
-    .note { color: var(--muted); font-size: 14px; }
-    .warn { border-left: 3px solid var(--accent); padding: 4px 12px; margin: 12px 0; }
-    table { border-collapse: collapse; width: 100%; font-size: 15px; }
-    th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
-    code { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; font-size: 14px; }
-    ol { padding-left: 22px; }
-    li { margin: 4px 0; }
-    a { color: var(--accent); }
+    .install ol { margin: 14px 0 8px; padding-left: 22px; }
+    .install .note { color: var(--muted); font-size: 14px; margin: 6px 0 0; }
+
+    /* Rendered README / PORTING, styled after GitHub's markdown */
+    .markdown h2 { font-size: 24px; margin: 40px 0 16px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+    .markdown h3 { font-size: 20px; margin: 28px 0 12px; }
+    .markdown h1 { font-size: 30px; margin: 0 0 16px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+    .markdown h2, .markdown h3 { scroll-margin-top: 16px; }
+    .markdown p, .markdown ul, .markdown ol, .markdown table, .markdown pre, .markdown blockquote { margin: 0 0 16px; }
+    .markdown ul, .markdown ol { padding-left: 28px; }
+    .markdown li { margin: 4px 0; }
+    .markdown li > ul, .markdown li > ol { margin: 4px 0; }
+    .markdown hr { border: 0; border-top: 1px solid var(--line); margin: 32px 0; }
+    .markdown img { max-width: 100%; height: auto; display: block; margin: 8px 0; }
+    .markdown blockquote { margin-left: 0; padding: 0 16px; color: var(--quote); border-left: 4px solid var(--line); }
+    .markdown code {
+      font: 85%/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      background: var(--card); border-radius: 6px; padding: 2px 6px;
+    }
+    .markdown pre { background: var(--card); border-radius: 6px; padding: 14px 16px; overflow-x: auto; }
+    .markdown pre code { background: none; padding: 0; font-size: 85%; }
+    .markdown table { display: block; overflow-x: auto; border-collapse: collapse; max-width: 100%; }
+    .markdown th, .markdown td { border: 1px solid var(--line); padding: 6px 13px; text-align: left; vertical-align: top; }
+    .markdown th { background: var(--card); font-weight: 600; }
+    .markdown tr:nth-child(2n) td { background: color-mix(in srgb, var(--card) 50%, transparent); }
+
+    footer { color: var(--muted); font-size: 14px; border-top: 1px solid var(--line); margin-top: 48px; padding-top: 16px; }
   </style>
 </head>
 <body>
 <main>
-  <h1>M5StickPomodoro</h1>
-  <p class="version">Firmware __VERSION__ · <a href="https://github.com/romanaerl/M5StickPomodoro">source and documentation</a></p>
+  <header>
+    <h1>M5StickPomodoro</h1>
+    <p class="version">Firmware __VERSION__ · <a href="https://github.com/romanaerl/M5StickPomodoro">GitHub</a> · <a href="https://github.com/romanaerl/M5StickPomodoro/releases/latest">Releases</a> · <a href="porting.html">Supported models &amp; porting</a></p>
+    <p>A standalone, battery-friendly Pomodoro timer for the <b>M5StickC Plus</b> and the original <b>M5StickC</b>. You control it mostly by how the device is placed: face down pauses, standing it on its end shows a big countdown bar, a tap on the table shows the time.</p>
+  </header>
 
-  <p>A battery-friendly Pomodoro timer you control by how the device is placed. Install it on your M5Stick right from this page: nothing to download, no addresses to type.</p>
-
-  <div class="install">
+  <!-- install -->
+  <section class="install" id="install">
+    <h2>Install from the browser</h2>
     <esp-web-install-button manifest="manifest.json">
       <span slot="unsupported">Your browser cannot talk to USB devices. Open this page in <b>Chrome</b> or <b>Edge</b> on a computer.</span>
       <span slot="not-allowed">Serial access needs a secure page (https).</span>
     </esp-web-install-button>
     <ol>
       <li>Connect the M5Stick over USB and <b>switch it on</b> (the port only exists while it is on).</li>
-      <li>Press <b>Connect</b> above and pick the port with <code>usbserial</code> in its name.</li>
+      <li>Press <b>Connect</b> and pick the port with <code>usbserial</code> in its name.</li>
       <li>Press <b>Install</b> and wait. The device restarts by itself when the install is done.</li>
     </ol>
-    <p class="note">Updating keeps your saved settings (session lengths, sound, tap). The device is identified automatically; one firmware fits every supported model.</p>
-  </div>
+    <p class="note">Updating keeps your saved settings. One firmware fits every supported model; the board is detected at boot.</p>
+    <p class="note"><b>macOS:</b> if the port is busy or nothing connects, run <code>killall scrod</code> in Terminal (the VoiceOver braille service grabs new USB serial ports) and close any other program that has the port open.</p>
+  </section>
+  <!-- /install -->
 
-  <div class="warn">
-    <b>macOS: the port is busy or nothing connects?</b> The VoiceOver braille service grabs new USB serial ports. Run
-    <code>killall scrod</code> in Terminal, then press Connect again. Also close any other program that has the port
-    open (a serial monitor, another browser tab).
-  </div>
+  <article class="markdown">
+__DOCS__
+  </article>
 
-  <h2>Supported models</h2>
-  <table>
-    <tr><th>Model</th><th>Notes</th></tr>
-    <tr><td><b>M5StickC Plus v1.1</b></td><td>Main target; all features.</td></tr>
-    <tr><td><b>M5StickC (original)</b></td><td>No buzzer: the red LED signals instead. Smaller screen with a compact status line. Units with the MPU6886 IMU only.</td></tr>
-  </table>
-
-  <h2>Other ways to flash</h2>
-  <p>Download the single-file image from the <a href="https://github.com/romanaerl/M5StickPomodoro/releases/latest">latest release</a> and write it at offset <code>0x0</code> with <code>esptool.py --chip esp32 write_flash 0x0 M5StickPomodoro-vX.Y.Z.bin</code>, or build from source with <code>scripts/flash.sh</code>. Writing the single-file image resets the saved settings.</p>
+  <footer>
+    M5StickPomodoro __VERSION__ · This page is generated from the repository's documentation ·
+    <a href="https://github.com/romanaerl/M5StickPomodoro">source on GitHub</a>
+  </footer>
 </main>
 </body>
 </html>

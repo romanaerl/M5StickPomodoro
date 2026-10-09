@@ -34,8 +34,8 @@ jobs:
           path: ~/.platformio
           key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
 
-      - name: Install PlatformIO
-        run: pip install platformio
+      - name: Install PlatformIO and the Markdown renderer
+        run: pip install platformio markdown-it-py==4.2.0 mdit-py-plugins==0.6.1
 
       - name: Build the installer site
         run: scripts/build_web.sh
