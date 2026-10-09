@@ -7,12 +7,44 @@ You control it mostly by **how the device is placed**: put it face down to pause
 > Developed and tested on the M5StickC Plus (ESP32-PICO-D4, AXP192, MPU6886, BM8563, ST7789 135×240).
 > Other M5Stick models need changes; see [PORTING.md](PORTING.md).
 
-![M5StickC Plus controls: power button on the left side, button B on the right side, M5 button under the screen, USB-C at the bottom](docs/device-r4.svg)
+![M5StickC Plus controls: power button on the left side, button B on the right side, M5 button under the screen, USB-C at the bottom](docs/device-r5.svg)
+
+## TL;DR
+
+**Two modes**
+- **WORK** — 25 min by default, the bar goes green → orange → red.
+- **BREAK** — 5 min by default, the bar goes blue → light blue.
+- Power-on always starts WORK.
+- Every session starts with a **5-second grace period** (yellow for WORK, violet for BREAK), then a beep, and the countdown begins.
+
+**Buttons** (they work the same in WORK and BREAK; B changes the length of the mode you are in)
+
+| Button | Press | Hold |
+|---|---|---|
+| **M5** (front, under the screen) | Restart the current mode. Press **again within 5 s** → switch WORK ⇄ BREAK. | — |
+| **B** (right side) | 1st press shows the length; each next press **+1 min** (1–60). Starts 1 s after the last press. | Adds minutes quickly. |
+| **Power** (left side) | Off: switch on. On, screen lit: **sound on / off**. | **1.5 s**: tap-to-wake in horizontal poses on / off. **6 s**: switch off. |
+
+**Poses**
+- **Face down** → pause (screen off, deep sleep).
+- **Face up again** → resume exactly where it stopped.
+- **Flat or on a long edge** → landscape. On edge B the image flips.
+- **On its end** (USB up or down) → portrait.
+- **Tapping the table** shows the time for 5 s. On its end this always works; in horizontal poses only with `TAP` on.
+- **Once a minute** the remaining minutes fade in and out for 5 s.
+
+**When a session ends** (beeps, then `00:00 FINISHED` blinks for 2 min)
+- **Move it to another pose and hold it for 1 s** (edge A ⇄ edge B, or from its end onto its side) → the **other** mode starts: WORK → BREAK, BREAK → WORK.
+- **Face down, then face up** → the **same** mode starts again.
+- **M5** → same mode (press again within 5 s to switch).
+- **B** → set a length and start.
+- **Do nothing** → after 2 min it goes to sleep. Flip it or press M5 later.
 
 ---
 
 ## Contents
 
+- [TL;DR](#tldr)
 - [Features at a glance](#features-at-a-glance)
 - [Cheat sheet](#cheat-sheet)
 - [How it works](#how-it-works)
@@ -111,7 +143,7 @@ Every session — after power-on, after the M5 or B button, or after a mode swit
 
 The timer keeps running in every pose where the screen faces you. To save battery and stay out of your way, the screen stays dark most of the time. It turns on:
 
-- **Once a minute (glance):** at every minute mark the screen shows only the remaining **minutes** (e.g. `24`), static, while the backlight steps up and down over 5 seconds (levels 7 → 8 → 8 → 8 → 7).
+- **Once a minute (glance):** at every minute mark the screen shows only the remaining **minutes** (e.g. `24`), static, while the backlight steps up and down over 5 seconds (levels 7 → 8 → 8 → 8 → 7). The two digits are as large as the landscape `MM:SS` in every pose, so in portrait they are much bigger than the full portrait time.
 - **For 5 seconds with the full `MM:SS`:** when a session starts or resumes, when the device moves to a different pose, or when you tap the table in a tap pose.
 
 ### Pausing and resuming
@@ -136,7 +168,7 @@ The timer keeps running in every pose where the screen faces you. To save batter
 
 ### Poses and screen layouts
 
-![The six poses: flat, long edge A, long edge B, on its end with USB up, on its end with USB down, and face down](docs/poses-r4.svg)
+![The six poses: flat, long edge A, long edge B, on its end with USB up, on its end with USB down, and face down](docs/poses-r5.svg)
 
 | Pose | Layout | Tap to wake |
 |---|---|---|
@@ -151,7 +183,7 @@ A new pose must be stable for a few samples (~0.5 s) before the layout changes. 
 
 ### The screen
 
-![Screen examples: WORK and BREAK grace periods, WORK and BREAK running, the minute glance and the finished state](docs/screens-r4.svg)
+![Screen examples: WORK and BREAK grace periods, WORK and BREAK running, the minute glance in landscape and portrait, and the finished state](docs/screens-r5.svg)
 
 - **Bar:** a white rounded frame with a bar inside whose level drops every second in proportion to the remaining time and changes colour with the mode.
 - **Time:** large digits in the middle with a black halo, so they stay readable over any bar colour.
