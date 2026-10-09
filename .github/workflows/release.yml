@@ -1,0 +1,49 @@
+# Builds the firmware on every push and pull request. On a version tag (v1.2.3) it also publishes a
+# GitHub release with the single-file image M5StickPomodoro-v1.2.3.bin (flash it at offset 0x0).
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # tags, for the version in the file name
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+
+      - name: Install PlatformIO
+        run: pip install platformio
+
+      - name: Build the single-file image
+        run: scripts/build_release.sh "${GITHUB_REF_NAME//\//-}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: dist/*.bin
+
+      - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/M5StickPomodoro-"$GITHUB_REF_NAME".bin \
+            --title "M5StickPomodoro $GITHUB_REF_NAME" \
+            --notes "Single-file firmware for the M5StickC Plus and the original M5StickC (one image for both; the board is detected at boot). Flash it at offset 0x0 — see the README: Flashing without building."
