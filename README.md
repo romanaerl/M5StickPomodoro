@@ -260,7 +260,7 @@ Power-on always starts a fresh WORK session. Settings are written to flash only 
 
 ### Web installer
 
-The **[web installer](https://romanaerl.github.io/M5StickPomodoro/)** (GitHub Pages, [ESP Web Tools](https://esphome.github.io/esp-web-tools/)) flashes the current release from Chrome or Edge with one button. It writes the bootloader, partition table and firmware at their own offsets and leaves the settings partition alone, so saved settings survive. It resets the device when done and releases the port. Below the install button the page shows this README (and PORTING.md as a second page), rendered from the repository at build time. It is published from the `production` branch by `.github/workflows/pages.yml`. The page counts visits, connections (a port picked) and finished or failed installs anonymously with [GoatCounter](https://www.goatcounter.com) (no cookies).
+The **[web installer](https://romanaerl.github.io/M5StickPomodoro/)** (GitHub Pages, [ESP Web Tools](https://esphome.github.io/esp-web-tools/)) flashes the current release from Chrome or Edge with one button. It writes the bootloader, partition table and firmware at their own offsets and leaves the settings partition alone, so saved settings survive. It resets the device when done and releases the port. Below the install button the page shows this README (and PORTING.md as a second page), rendered from the repository at build time. It is published from the `production` branch by `.github/workflows/pages.yml`. The page counts visits, connections (a port picked), finished or failed installs, and how often its "No port selected" help (and which OS tab) is opened, anonymously with [GoatCounter](https://www.goatcounter.com) (no cookies).
 
 ### Without building: release image
 

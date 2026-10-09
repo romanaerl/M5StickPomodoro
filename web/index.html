@@ -125,6 +125,15 @@ __DOCS__
   </footer>
 </main>
 
+<script>
+  // Anonymous event counter (GoatCounter); a no-op if its script is blocked or not loaded yet.
+  function countEvent(path, title) {
+    if (window.goatcounter && window.goatcounter.count) {
+      window.goatcounter.count({ path: path, title: title, event: true });
+    }
+  }
+</script>
+
 <dialog class="help" id="no-port-help" aria-labelledby="no-port-title">
   <div class="body">
     <h2 id="no-port-title">No port selected</h2>
@@ -176,14 +185,23 @@ __DOCS__
   // Replace ESP Web Tools' generic "No port selected" dialog (driver links for every ESP board) with
   // help for this device, with macOS / Windows / Linux tabs. The library has no option for this, so its
   // dialog element is swapped as soon as it is added (esp-web-tools 10.4.0, pinned above).
+  // Counted: "no-port-help" each time it is shown, "no-port-tab-<os>" once per showing for each tab
+  // opened (macOS is the default tab, so "no-port-tab-mac" only counts going back to it).
   (function () {
-    var help = document.getElementById("no-port-help"), retry = null;
+    var help = document.getElementById("no-port-help"), retry = null, seen = {};
+    function selectTab(name) {
+      help.querySelectorAll("[role=tab]").forEach(function (t) {
+        t.setAttribute("aria-selected", String(t.dataset.tab === name));
+      });
+      help.querySelectorAll(".panel").forEach(function (p) { p.hidden = p.dataset.panel !== name; });
+    }
     help.querySelectorAll("[role=tab]").forEach(function (tab) {
       tab.addEventListener("click", function () {
-        help.querySelectorAll("[role=tab]").forEach(function (t) {
-          t.setAttribute("aria-selected", String(t === tab));
-        });
-        help.querySelectorAll(".panel").forEach(function (p) { p.hidden = p.dataset.panel !== tab.dataset.tab; });
+        if (tab.getAttribute("aria-selected") !== "true" && !seen[tab.dataset.tab]) {
+          seen[tab.dataset.tab] = true;
+          countEvent("no-port-tab-" + tab.dataset.tab, "No port selected: " + tab.textContent + " tab");
+        }
+        selectTab(tab.dataset.tab);
       });
     });
     help.querySelector("[data-action=cancel]").addEventListener("click", function () { help.close(); });
@@ -197,7 +215,10 @@ __DOCS__
           if (el.tagName !== "EWT-NO-PORT-PICKED-DIALOG") return;
           retry = el.doTryAgain;
           el.remove();
+          seen = {};
+          selectTab("mac");  // always open on the default tab
           help.showModal();
+          countEvent("no-port-help", "No port selected: help shown");
         });
       });
     }).observe(document.body, { childList: true });
@@ -212,11 +233,7 @@ __DOCS__
   // this, so the dialog's internal `_installState` is watched (esp-web-tools 10.4.0, pinned above;
   // re-check this after upgrading it).
   (function () {
-    function count(path, title) {
-      if (window.goatcounter && window.goatcounter.count) {
-        window.goatcounter.count({ path: path, title: title, event: true });
-      }
-    }
+    var count = countEvent;
     new MutationObserver(function (mutations) {
       mutations.forEach(function (m) {
         m.addedNodes.forEach(function (el) {
