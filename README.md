@@ -1,6 +1,10 @@
 # M5StickPomodoro
 
-A standalone, battery-friendly Pomodoro timer for the **M5StickC Plus**.
+[![Latest release](https://img.shields.io/github/v/release/romanaerl/M5StickPomodoro)](https://github.com/romanaerl/M5StickPomodoro/releases/latest)
+
+**[Download the latest firmware](https://github.com/romanaerl/M5StickPomodoro/releases/latest)** — one `.bin` for every supported model, flashable straight from the browser ([how](#tldr)).
+
+A standalone, battery-friendly Pomodoro timer for the **M5StickC Plus** and the original **M5StickC**.
 
 You control it mostly by **how the device is placed**: put it face down to pause, stand it on its end to see a big countdown bar, tap the table to glance at it. Three buttons cover the rest. It needs no phone, no Wi-Fi, no Bluetooth and no cloud. Flash it once and it just works.
 
