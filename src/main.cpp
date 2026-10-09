@@ -285,7 +285,12 @@ static void drawTime(int remS, int cx, int cy, int maxW, int maxH) {
   else snprintf(buf, sizeof buf, "%02d:%02d", remS / 60, remS % 60);
   canvas.setFont(&fonts::Font7);
   canvas.setTextSize(1);
-  canvas.setTextSize(std::min((float)maxW / canvas.textWidth("88:88"), (float)maxH / canvas.fontHeight()));
+  float size = std::min((float)maxW / canvas.textWidth("88:88"), (float)maxH / canvas.fontHeight());
+  if (minutesOnly) {  // two digits: as large as the landscape MM:SS, or as wide as the bar allows
+    float wide = std::min(216.0f / canvas.textWidth("88:88"), 90.0f / canvas.fontHeight());
+    size = std::min((float)maxW / canvas.textWidth("88"), wide);
+  }
+  canvas.setTextSize(size);
   canvas.setTextDatum(middle_center);
   canvas.setTextColor(TFT_BLACK);  // black halo keeps digits readable on top of the bar
   for (int dx = -3; dx <= 3; dx += 3)
