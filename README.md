@@ -42,7 +42,7 @@ You control it mostly by **how the device is placed**: put it face down to pause
 - **Face down, then face up** → the **same** mode starts again.
 - **M5** → same mode (press again within 5 s to switch).
 - **B** → set a length and start.
-- **Do nothing** → after 2 min it goes to sleep. Flip it or press M5 later.
+- **Do nothing** → after the 2 minutes of blinking it goes into deep sleep. Then only two things wake it: the **M5** button, or turning it **face down for about a second and back** to any visible pose. Both start the same mode again; changing the pose or pressing B no longer does anything.
 
 **Supported models** (one firmware for all; the board is detected at boot)
 
@@ -125,6 +125,7 @@ Details: [Build and flash](#build-and-flash).
 | Tap the table (tap poses) | Shows the full `MM:SS` for 5 s. |
 | Session ends, then move it to another pose for 1 s | Starts the other mode (WORK → BREAK or BREAK → WORK). |
 | Session ends, then face down and back up | Starts the same mode again. |
+| Nothing done for 2 minutes after the end | Deep sleep. Wake it with **M5**, or face down for about a second and back to any visible pose (same mode). |
 
 ---
 
@@ -184,9 +185,14 @@ The timer keeps running in every pose where the screen faces you. To save batter
    - press **M5** → the same mode restarts (press again within 5 s to switch);
    - press **B** → set a length and start;
    - turn it **face down** → the screen turns off at once.
-4. After the blinking (or face down), the device deep-sleeps until:
-   - it is turned **face down and back up** → the **same** mode starts again;
-   - the **M5** button is pressed → the same mode starts.
+4. If nobody does anything during the 2 minutes (or it is turned face down), the device goes into **deep sleep**:
+   the screen is off and the timer does not run. Only two things wake it:
+   - the **M5** button → the **same** mode starts again;
+   - turning it **face down for about a second** and then back to **any visible pose** (flat, an edge or an end) →
+     the **same** mode starts again.
+
+   In deep sleep a plain change of pose (without going face down first) and the **B** button do not wake it: the
+   pose switch to the other mode works only during the 2 minutes of blinking.
 
 ### Poses and screen layouts
 
