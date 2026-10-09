@@ -89,6 +89,25 @@
     .help .actions .primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
     .help code { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; font-size: 14px; }
 
+    /* Diagram gallery: the selected diagram large, thumbnails in a column on the right (a row on phones) */
+    .gallery { display: grid; grid-template-columns: 1fr 120px; gap: 12px; margin: 8px 0 24px; align-items: start; }
+    .gallery-main { margin: 0; }
+    .gallery-main img { width: 100%; margin: 0; }
+    .gallery-thumbs { display: flex; flex-direction: column; gap: 10px; }
+    .gallery .thumb {
+      padding: 4px; background: var(--card); border: 2px solid var(--line); border-radius: 10px; cursor: pointer;
+      line-height: 0;
+    }
+    .gallery .thumb img { width: 100%; height: 80px; object-fit: contain; margin: 0; }
+    .gallery .thumb[aria-current="true"] { border-color: var(--accent); }
+    .gallery .thumb:hover { border-color: var(--muted); }
+    @media (max-width: 640px) {
+      .gallery { grid-template-columns: 1fr; }
+      .gallery-thumbs { flex-direction: row; }
+      .gallery .thumb { flex: 1; }
+      .gallery .thumb img { height: 56px; }
+    }
+
     footer { color: var(--muted); font-size: 14px; border-top: 1px solid var(--line); margin-top: 48px; padding-top: 16px; }
   </style>
 </head>
@@ -132,6 +151,21 @@ __DOCS__
     <a href="https://github.com/romanaerl/M5StickPomodoro">source on GitHub</a>
   </footer>
 </main>
+
+<script>
+  // Diagram gallery (built by scripts/render_docs.py): a thumbnail click shows that diagram large.
+  document.querySelectorAll(".gallery").forEach(function (g) {
+    var main = g.querySelector(".gallery-main img");
+    g.querySelectorAll(".thumb").forEach(function (t) {
+      t.addEventListener("click", function () {
+        main.src = t.dataset.src;
+        main.alt = t.dataset.alt;
+        g.querySelectorAll(".thumb").forEach(function (o) { o.removeAttribute("aria-current"); });
+        t.setAttribute("aria-current", "true");
+      });
+    });
+  });
+</script>
 
 <script>
   // Anonymous event counter (GoatCounter); a no-op if its script is blocked or not loaded yet.
