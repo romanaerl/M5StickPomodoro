@@ -30,6 +30,7 @@
 #include <Preferences.h>
 #include <esp_sleep.h>
 #include <driver/adc.h>
+#include <driver/uart.h>
 
 #ifndef SESSION_MIN
 #define SESSION_MIN 25  // default WORK length, minutes
@@ -111,6 +112,20 @@ static const BoardProfile& prof() { return PROFILES[profileIdx]; }
 static bool hasBuzzer() { return prof().buzzerPin >= 0; }
 
 // ---------- low level ----------
+
+// The USB-UART bridge is powered from USB. While the cable is out, a driven TX line (idle HIGH)
+// back-powers it through its RX pin, and then it does not enumerate when the cable is plugged in
+// (found on the device: the port only appeared after deep sleep released the pins). So TX is
+// connected only while USB power is present; logs flow as usual whenever a computer is attached.
+static bool txAttached = true;
+static void serialFollowUsb() {
+  const bool usb = M5.Power.Axp192.isVBUS();
+  if (usb == txAttached) return;
+  Serial.flush();
+  if (usb) uart_set_pin(UART_NUM_0, 1, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+  else pinMode(1, INPUT);
+  txAttached = usb;
+}
 static void wr(uint8_t addr, uint8_t reg, uint8_t v) { M5.In_I2C.writeRegister8(addr, reg, v, I2C_HZ); }
 static uint8_t rd(uint8_t addr, uint8_t reg) { return M5.In_I2C.readRegister8(addr, reg, I2C_HZ); }
 
@@ -675,6 +690,7 @@ void setup() {
   cfg.clear_display = true;
   M5.begin(cfg);
   adc_power_release();  // M5Unified keeps the SAR ADC powered for GPIO36/39 debouncing
+  serialFollowUsb();
   if (!warm) {  // pick the board profile (deep-sleep wakes keep the one chosen at cold boot)
     profileIdx = 0;
     for (size_t i = 0; i < sizeof PROFILES / sizeof PROFILES[0]; i++)
@@ -880,6 +896,7 @@ static void pausedStep() {
 }
 
 void loop() {
+  serialFollowUsb();
   switch (state) {
     case RUNNING:  runStep(); break;
     case PAUSED:   pausedStep(); break;

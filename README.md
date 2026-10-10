@@ -338,6 +338,8 @@ Found while building this on the device:
 - **GPIO35:** shared by the MPU6886 INT (configured open-drain) and the BM8563 INT (its interrupts are disabled).
 - **Power button:** wired to the AXP192, not to the ESP32. Short and long presses are latched in AXP192 register `0x46` and read over I2C; the chip reports no release event. The minimum visible backlight level is LDO2 level 7 (2.5 V), so the glance fades in 0.1 V steps.
 - **USB serial:** the serial port disappears while the device is switched off with the power button (observed on the device), so switch it on before flashing.
+- **USB-UART bridge back-powering:** while the cable is out, a driven UART TX line (idle HIGH) back-powers the USB-UART bridge through its RX pin, and the bridge then does not enumerate when the cable is plugged into a running device. It only appeared after deep sleep released the pins. The firmware therefore connects TX only while the AXP192 reports USB power.
+- **Opening the serial port restarts the device:** the bridge drives EN / GPIO0 through DTR / RTS for automatic flashing, so a serial monitor restarts the timer when it connects.
 
 ## Known limitations
 
