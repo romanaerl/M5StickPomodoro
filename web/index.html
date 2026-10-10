@@ -270,6 +270,31 @@ __DOCS__
 <!-- Anonymous counters (GoatCounter, no cookies): page views are counted by count.js itself. -->
 <script data-goatcounter="https://m5stickpomodoro.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
 <script>
+  // "Installation complete!" ends the flow: its button is relabelled "Close" and closes the dialog
+  // (releasing the port) instead of going back to the install screen; another device starts with
+  // Connect again. ESP Web Tools has no option for this: the click is caught on the dialog's shadow root
+  // before the library's own handler (esp-web-tools 10.4.0, pinned above; re-check after upgrading it).
+  function closeOnFinished(el) {
+    if (el._closeOnFinished) return;
+    el._closeOnFinished = true;
+    var done = function () {
+      return el._state === "INSTALL" && el._installState && el._installState.state === "finished";
+    };
+    el.shadowRoot.addEventListener("click", function (e) {
+      if (!done()) return;
+      var onButton = e.composedPath().some(function (n) { return n.tagName === "EW-TEXT-BUTTON"; });
+      if (!onButton) return;
+      e.stopPropagation();
+      el._closeDialog();
+    }, true);
+    var relabel = setInterval(function () {
+      if (!el.isConnected) { clearInterval(relabel); return; }
+      if (!done()) return;
+      var btn = el.shadowRoot.querySelector('[slot="actions"] ew-text-button');
+      if (btn && btn.textContent.trim() !== "Close") btn.textContent = "Close";
+    }, 100);
+  }
+
   // Install counters. "install-connect": the install dialog opened, i.e. a port was picked after Connect.
   // "install-finished" / "install-error": the result of flashing. ESP Web Tools has no public event for
   // this, so the dialog's internal `_installState` is watched (esp-web-tools 10.4.0, pinned above;
@@ -281,6 +306,7 @@ __DOCS__
         m.addedNodes.forEach(function (el) {
           if (el.tagName !== "EWT-INSTALL-DIALOG") return;
           count("install-connect", "Connect: port picked");
+          closeOnFinished(el);
           var reported = false;
           var timer = setInterval(function () {
             if (!el.isConnected) { clearInterval(timer); return; }
