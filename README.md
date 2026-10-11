@@ -59,7 +59,7 @@ You control it mostly by **how the device is placed**: put it face down to pause
 1. Connect the device over USB and switch it on.
 2. Open the **[web installer](https://romanaerl.github.io/M5StickPomodoro/)** in Chrome or Edge (not Safari).
 3. Press **Connect**, pick the port with `usbserial` in its name (on the StickS3: `usbmodem` or "USB JTAG/serial"), press **Install**. The installer picks the right build for the chip by itself. The device restarts; saved settings are kept.
-4. At its first start the firmware checks the hardware. **"Unsupported device" on the screen, or five short beeps, means this model is not supported** — see [Is my M5Stick supported?](#is-my-m5stick-supported).
+4. Close the installer: the page reads the device's **self-check** and shows the result under the install button — the model it found, or "Unsupported device" with the reason. The device shows the same: **"Unsupported device" on its screen, or five short beeps, means this model is not supported** — see [Is my M5Stick supported?](#is-my-m5stick-supported). The **Check my device** button repeats the check at any time.
 
 On macOS, if the port is busy, run `killall scrod` first (see [below](#build-and-flash)).
 
@@ -266,7 +266,7 @@ Power-on always starts a fresh WORK session. Settings are written to flash only 
 
 ### Web installer
 
-The **[web installer](https://romanaerl.github.io/M5StickPomodoro/)** (GitHub Pages, [ESP Web Tools](https://esphome.github.io/esp-web-tools/)) flashes the current release from Chrome or Edge with one button. It picks the ESP32 or ESP32-S3 build from the connected chip, writes the bootloader, partition table and firmware at their own offsets and leaves the settings partition alone, so saved settings survive. It resets the device when done and releases the port; the **Close** button on the "Installation complete!" screen closes the installer (press **Connect** again for another device). Below the install button the page shows this README (and PORTING.md as a second page), rendered from the repository at build time. It is published from the `production` branch by `.github/workflows/pages.yml`. The page counts visits, connections (a port picked), finished or failed installs, and how often its "No port selected" help (and which OS tab) is opened, anonymously with [GoatCounter](https://www.goatcounter.com) (no cookies).
+The **[web installer](https://romanaerl.github.io/M5StickPomodoro/)** (GitHub Pages, [ESP Web Tools](https://esphome.github.io/esp-web-tools/)) flashes the current release from Chrome or Edge with one button. It picks the ESP32 or ESP32-S3 build from the connected chip, writes the bootloader, partition table and firmware at their own offsets and leaves the settings partition alone, so saved settings survive. It resets the device when done and releases the port; the **Close** button on the "Installation complete!" screen closes the installer (press **Connect** again for another device). Then the page restarts the device over the same port, reads its first-boot **self-check** line and shows the result under the install button: "Identified: <model>" (with a note for untested models) or "Unsupported device" with the code and reason. **Check my device** does the same for a device that is already flashed. Below the install button the page shows this README (and PORTING.md as a second page), rendered from the repository at build time. It is published from the `production` branch by `.github/workflows/pages.yml`. The page counts visits, connections (a port picked), finished or failed installs, and how often its "No port selected" help (and which OS tab) is opened, anonymously with [GoatCounter](https://www.goatcounter.com) (no cookies).
 
 ### Without building: release image
 
@@ -325,7 +325,7 @@ At its first start after flashing, the firmware checks what the board really has
 
 - **On the screen:** "Unsupported device", an error code and the reason. Look-alikes are named, e.g. "Looks like M5StickC Plus SE, which has no motion sensor".
 - **Five short beeps** (or five LED flashes on the original StickC): the same message for a board whose screen is missing but whose sound is known. Without a screen they repeat every 10 seconds for a minute.
-- **In the USB log:** a line `UNSUPPORTED: <code> <reason>`. `scripts/flash.sh` reads it right after flashing and prints it. A supported device logs `IDENTIFIED: <model> ...`.
+- **In the USB log:** a line `UNSUPPORTED: <code> <reason>`; a supported device logs `IDENTIFIED: <model> ...`. Both tools read it after flashing: the [web installer](https://romanaerl.github.io/M5StickPomodoro/) shows it under the install button when you close the installer (and on **Check my device**), and `scripts/flash.sh` prints it.
 
 | Code | Meaning | Typical cause |
 |---|---|---|
