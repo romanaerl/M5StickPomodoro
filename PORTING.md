@@ -6,6 +6,11 @@
 |---|---|
 | **M5StickC Plus** | Main target; developed and tested on it. |
 | **M5StickC** (original) | Supported and tested; see [its notes](#m5stickc-original). |
+| **M5StickC Plus2** | **Untested.** Profile and code prepared from the docs; see [its notes](#m5stickc-plus2). |
+| **M5StickS3** | **Untested.** Profile, code and its own build (`m5stick-s3`) prepared from the docs; see [its notes](#m5sticks3). |
+
+Untested profiles have `tested = false` in `src/boards.h`. The boot log then prints
+`Profile ... is UNTESTED on a real device`, and `scripts/flash.sh` warns before flashing.
 
 One firmware runs on all of them. At boot M5Unified detects the board and the firmware picks the matching **board
 profile** from [`src/boards.h`](src/boards.h). The boot log shows it, e.g. `profile=M5StickC`.
@@ -78,42 +83,55 @@ accelerometer axes and display rotations (measured on the device). Its profile d
 
 ## M5StickC Plus2
 
-Different power architecture. It needs real changes.
+**Prepared, untested.** It runs the same ESP32 build as the StickC and StickC Plus; its profile in
+`src/boards.h` selects the differences. Sources: the M5Stack docs and the M5Unified board code.
 
-- **No AXP192.** Power is held on by **GPIO4**, which must stay HIGH while running on battery. M5Unified drives it HIGH
-  in `M5.begin()`, but in deep sleep the pin must be latched or the device powers off:
-  ```cpp
-  gpio_hold_en(GPIO_NUM_4);
-  gpio_deep_sleep_hold_en();
-  ```
-  Also drive GPIO4 HIGH at the very start of `setup()`, before the pre-`M5.begin()` fast path.
-- **Remove or guard every AXP192 access:** the LDO3 `bitOn` / `bitOff` on `0x34`, `M5.Power.Axp192.setEXTEN()`
-  and the `cfg.output_power` assumption. On the Plus2 they target a chip that does not exist.
-- **Backlight** is PWM on GPIO27; `M5.Display.setBrightness()` already handles it. There is no LCD logic-supply switch,
-  so in deep sleep just call `M5.Display.sleep()`.
-- **Buzzer** is on GPIO2 and does not need EXTEN; `beep()` works without the `setEXTEN` lines.
-- **Sound toggle:** `powerKeyPressed()` reads the AXP192 power-key register. On the Plus2 the power button is GPIO35
-  (button C), so read that pin instead.
-- **GPIO35 is the power button (button C)** on the Plus2, not an IMU interrupt. Check whether the MPU6886 INT is routed to
-  any ESP32 pin. Without it the firmware falls back to orientation polling: light sleep with 1 s wake-ups while paused.
-  That is reliable but uses noticeably more power than deep sleep with wake-on-motion. Deep sleep in `FINISHED` would
-  then wake on a button only.
-- **Battery level** comes from the ADC on GPIO38; `M5.Power.getBatteryLevel()` handles it.
-- Flash is 8 MB, so use a Plus2 board definition or set the flash size in `platformio.ini`.
-- Recalibrate the axes (step 0).
+| | M5StickC Plus2 | How the firmware handles it |
+|---|---|---|
+| Chip | ESP32-PICO-V3-02, 8 MB flash | Same build; `scripts/flash.sh` knows the chip |
+| Power | No AXP192. GPIO4 (HOLD) must stay HIGH | `Power::HOLD_GPIO4`: M5Unified drives it; it is latched with `gpio_hold_en` in deep sleep |
+| Backlight | PWM on GPIO27 | `M5.Display.setBrightness()`; the minute glance uses `level × 8` (a guess) |
+| Buzzer | GPIO2, no 5 V boost needed | `Sound::BUZZER` |
+| Power button (C) | GPIO35 | Polled: short press = sound, 1.5 s = TAP, like the AXP192 boards |
+| LED | GPIO19 (with the IR emitter), active high | Not used: it has a buzzer |
+| IMU | MPU6886; interrupt line not documented | Polled once a second: no deep sleep while paused, no tap-to-wake |
+| RTC | BM8563 | As on the Plus |
 
-## M5StickS3 and other ESP32-S3 models
+**Check first on a real device:**
 
-These use an ESP32-S3, a different PMIC (M5PM1) and different internal I2C pins (SDA 47 / SCL 48 in M5Unified). Expect
-to rewrite the hardware layer:
+1. The boot log shows `profile=M5StickC Plus2` and stays on. If it switches itself off, the GPIO4 hold is wrong.
+2. Calibrate the axes (step 0). The profile assumes the same as the Plus.
+3. Face down pauses and face up resumes (polled, within ~1 s).
+4. A finished session deep-sleeps and **wakes on the M5 button without powering off**. This tests the GPIO4 latch.
+5. The minute glance is visible but soft; tune the PWM levels in `backlightLevel()`.
+6. If the MPU6886 interrupt turns out to be wired (to a pin such as GPIO35 shared with button C, or another RTC
+   GPIO), set `intPin` to get deep sleep while paused and tap-to-wake.
 
-- Replace the raw AXP192 / MPU6886 / BM8563 register code with M5Unified APIs where possible: `M5.Imu`, `M5.Rtc`,
-  `M5.Power`, `M5.BtnA` / `M5.BtnB`. Keep raw access only for features M5Unified does not expose, such as IMU
-  wake-on-motion.
-- Check which IMU M5Unified detects and whether its interrupt pin is wired to an RTC-capable GPIO for deep-sleep wake.
-- ESP32-S3 deep-sleep wake works differently from the ESP32 classic: ext1 supports "any low", so both buttons can wake
-  it. Adjust `deepSleep()` accordingly.
-- Set `board` and `platform` in `platformio.ini` for the S3 target.
+## M5StickS3
+
+**Prepared, untested.** ESP32-S3, so it has its own build of the same code (PlatformIO env `m5stick-s3`;
+`scripts/flash.sh` picks it from the chip, and the web installer from the chip family). Sources: the M5Stack
+docs and the M5Unified board code (M5Unified already supports the board).
+
+| | M5StickS3 | How the firmware handles it |
+|---|---|---|
+| Chip | ESP32-S3-PICO-1-N8R8, 8 MB flash, native USB | Env `m5stick-s3` (USB CDC on boot) |
+| Power | M5PM1 PMIC (I2C 0x6E); its button powers on / resets / powers off by itself | `Power::M5PM1`: no power-key functions, so no sound or TAP toggles |
+| Backlight | PWM on GPIO38 | `M5.Display.setBrightness()` |
+| Sound | ES8311 codec + speaker, amplifier switched by the PMIC | `Sound::SPEAKER`: `M5.Speaker`, started only for a beep |
+| Buttons | GPIO11 (front), GPIO12 (side) | From the profile |
+| IMU | BMI270; its interrupt goes to the PMIC | `Imu::M5UNIFIED`: polled through `M5.Imu` (axes already remapped by M5Unified) |
+| RTC | Not documented | `Clock::SYSTEM`: ESP32 time, less accurate across sleep |
+| Internal I2C | SDA 47 / SCL 48 | From the profile |
+
+**Check first on a real device:**
+
+1. The boot log (USB CDC) shows `profile=M5StickS3`. The display works and every pose shows an upright image;
+   fix `rotation` and the axes (step 0).
+2. Beeps come from the speaker.
+3. Timing over a full session, since there is no RTC. If it drifts, look for an RTC on the board or in the M5PM1.
+4. A finished session deep-sleeps and wakes on the front button.
+5. Light sleep may drop the USB CDC connection, so logs can stop between events.
 
 ## Verifying a port
 

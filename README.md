@@ -8,8 +8,9 @@ A standalone, battery-friendly Pomodoro timer for the **M5StickC Plus** and the 
 
 You control it mostly by **how the device is placed**: put it face down to pause, stand it on its end to see a big countdown bar, tap the table to glance at it. Three buttons cover the rest. It needs no phone, no Wi-Fi, no Bluetooth and no cloud. Flash it once and it just works.
 
-> **Supported models:** M5StickC Plus (main target) and the original M5StickC (no buzzer: it signals with its red LED).
-> One firmware detects the board at boot. Adding a similar model is one row in [`src/boards.h`](src/boards.h); see [PORTING.md](PORTING.md).
+> **Supported models:** M5StickC Plus (main target) and the original M5StickC (no buzzer: it signals with its red LED), both tested.
+> **Prepared but untested:** M5StickC Plus2 and M5StickS3.
+> One firmware detects the board at boot (the StickS3 has its own build). Adding a similar model is one row in [`src/boards.h`](src/boards.h); see [PORTING.md](PORTING.md).
 
 ![M5StickC Plus controls: power button on the left side, button B on the right side, M5 button under the screen, USB-C at the bottom](docs/device-r5.svg)
 
@@ -44,17 +45,21 @@ You control it mostly by **how the device is placed**: put it face down to pause
 - **B** → a single press shows the length (the blinking goes on); more presses set a new length and start.
 - **Do nothing** → after the 2 minutes of blinking it goes into deep sleep. Then only two things wake it: the **M5** button, or turning it **face down for about a second and back** to any visible pose. Both start the same mode again; changing the pose or pressing B no longer does anything.
 
-**Supported models** (one firmware for all; the board is detected at boot)
+**Supported models** (the board is detected at boot; one firmware for the ESP32 models, a separate build for the ESP32-S3)
 
-| Model | Notes |
-|---|---|
-| **M5StickC Plus v1.1** | Main target; all features as described here. |
-| **M5StickC (original)** | No buzzer: the red LED blinks instead of beeping, and the power button's short press switches the LED (`LED ON` / `LED OFF`). Smaller 80×160 screen: compact status line; in portrait it shows only the mode and battery (option flags such as `NO LED` / `TAP` appear in landscape). Only units with the MPU6886 IMU (early SH200Q units are not supported). |
+| Model | Status | Notes |
+|---|---|---|
+| **M5StickC Plus v1.1** | ✅ tested | Main target; all features as described here. |
+| **M5StickC (original)** | ✅ tested | No buzzer: the red LED blinks instead of beeping, and the power button's short press switches the LED (`LED ON` / `LED OFF`). Smaller 80×160 screen: compact status line; in portrait it shows only the mode and battery (option flags such as `NO LED` / `TAP` appear in landscape). Only units with the MPU6886 IMU (early SH200Q units are not supported). |
+| **M5StickC Plus2** | ⚠️ untested | Prepared from the docs, not yet run on a device. No AXP192: power held by GPIO4, PWM backlight, buzzer without the 5 V boost, power button (C) on GPIO35. Its IMU interrupt is not documented, so orientation is polled once a second (no deep sleep while paused, no tap-to-wake). |
+| **M5StickS3** | ⚠️ untested | Prepared from the docs, not yet run on a device; ESP32-S3, its own build. BMI270 IMU polled (no deep sleep while paused, no tap-to-wake), speaker instead of the buzzer, no RTC documented (time from the less accurate ESP32 clock), and the power button belongs to the power chip (no sound / tap toggles). |
+| **M5StickC Plus SE** | ❌ not supported | No motion sensor (IMU). The firmware recognises it and shows "Unsupported device" (E1) instead of running. |
 
 **Flashing — quickest way (no tools to install)**
 1. Connect the device over USB and switch it on.
 2. Open the **[web installer](https://romanaerl.github.io/M5StickPomodoro/)** in Chrome or Edge (not Safari).
-3. Press **Connect**, pick the port with `usbserial` in its name, press **Install**. The device restarts by itself; saved settings are kept.
+3. Press **Connect**, pick the port with `usbserial` in its name (on the StickS3: `usbmodem` or "USB JTAG/serial"), press **Install**. The installer picks the right build for the chip by itself. The device restarts; saved settings are kept.
+4. At its first start the firmware checks the hardware. **"Unsupported device" on the screen, or five short beeps, means this model is not supported** — see [Is my M5Stick supported?](#is-my-m5stick-supported).
 
 On macOS, if the port is busy, run `killall scrod` first (see [below](#build-and-flash)).
 
@@ -83,6 +88,7 @@ Details: [Build and flash](#build-and-flash).
   - [Battery indicator](#battery-indicator)
   - [What is remembered](#what-is-remembered)
 - [Build and flash](#build-and-flash)
+- [Is my M5Stick supported?](#is-my-m5stick-supported)
 - [Power design and battery life](#power-design-and-battery-life)
 - [Hardware notes](#hardware-notes)
 - [Known limitations](#known-limitations)
@@ -260,11 +266,16 @@ Power-on always starts a fresh WORK session. Settings are written to flash only 
 
 ### Web installer
 
-The **[web installer](https://romanaerl.github.io/M5StickPomodoro/)** (GitHub Pages, [ESP Web Tools](https://esphome.github.io/esp-web-tools/)) flashes the current release from Chrome or Edge with one button. It writes the bootloader, partition table and firmware at their own offsets and leaves the settings partition alone, so saved settings survive. It resets the device when done and releases the port; the **Close** button on the "Installation complete!" screen closes the installer (press **Connect** again for another device). Below the install button the page shows this README (and PORTING.md as a second page), rendered from the repository at build time. It is published from the `production` branch by `.github/workflows/pages.yml`. The page counts visits, connections (a port picked), finished or failed installs, and how often its "No port selected" help (and which OS tab) is opened, anonymously with [GoatCounter](https://www.goatcounter.com) (no cookies).
+The **[web installer](https://romanaerl.github.io/M5StickPomodoro/)** (GitHub Pages, [ESP Web Tools](https://esphome.github.io/esp-web-tools/)) flashes the current release from Chrome or Edge with one button. It picks the ESP32 or ESP32-S3 build from the connected chip, writes the bootloader, partition table and firmware at their own offsets and leaves the settings partition alone, so saved settings survive. It resets the device when done and releases the port; the **Close** button on the "Installation complete!" screen closes the installer (press **Connect** again for another device). Below the install button the page shows this README (and PORTING.md as a second page), rendered from the repository at build time. It is published from the `production` branch by `.github/workflows/pages.yml`. The page counts visits, connections (a port picked), finished or failed installs, and how often its "No port selected" help (and which OS tab) is opened, anonymously with [GoatCounter](https://www.goatcounter.com) (no cookies).
 
 ### Without building: release image
 
-Every [release](https://github.com/romanaerl/M5StickPomodoro/releases) has one file, `M5StickPomodoro-vX.Y.Z.bin`. It contains the bootloader, partition table and firmware, and is the same for every supported model. Flash it at offset **`0x0`**:
+Every [release](https://github.com/romanaerl/M5StickPomodoro/releases) has two files. Each contains the bootloader, partition table and firmware; flash it at offset **`0x0`**:
+
+- `M5StickPomodoro-vX.Y.Z.bin`: ESP32 models (StickC Plus, StickC, StickC Plus2), the same for all of them.
+- `M5StickPomodoro-vX.Y.Z-S3.bin`: the StickS3 (ESP32-S3, untested); with esptool use `--chip esp32s3`.
+
+Ways to flash it:
 
 - **In the browser, by hand:** open the [Espressif web flasher](https://espressif.github.io/esptool-js/) in Chrome or Edge, press **Connect**, pick the device, set **Flash Address** to `0x0`, choose the file and press **Program**. Then press **Disconnect** (or close the tab); while the page holds the port the device stays in reset. If it still shows nothing, switch it off and on.
 - **With esptool:**
@@ -307,6 +318,32 @@ scripts/flash.sh --env test
 Lengths already set with the B button are stored in flash and override the defaults. The defaults come from `-DSESSION_MIN=25` and `-DBREAK_MIN=5`.
 
 ---
+
+## Is my M5Stick supported?
+
+At its first start after flashing, the firmware checks what the board really has: the display and its size, the power chip, the motion sensor (IMU) and whether its reading is plausible, the clock chip (RTC) and whether it runs, and the audio codec on the StickS3. The result must match one of the [supported models](#tldr) in [`src/boards.h`](src/boards.h). If it does not, **the timer does not run** and the device says why:
+
+- **On the screen:** "Unsupported device", an error code and the reason. Look-alikes are named, e.g. "Looks like M5StickC Plus SE, which has no motion sensor".
+- **Five short beeps** (or five LED flashes on the original StickC): the same message for a board whose screen is missing but whose sound is known. Without a screen they repeat every 10 seconds for a minute.
+- **In the USB log:** a line `UNSUPPORTED: <code> <reason>`. `scripts/flash.sh` reads it right after flashing and prints it. A supported device logs `IDENTIFIED: <model> ...`.
+
+| Code | Meaning | Typical cause |
+|---|---|---|
+| E1 | No motion sensor (IMU) | M5StickC Plus SE; an early M5StickC with the SH200Q sensor |
+| E2 | The motion sensor gives an implausible reading | a damaged sensor |
+| E3 | The power chip does not match the model | another board that looks the same to the display check |
+| E4 | No display, or one of another size | a board without a screen, or another model |
+| E5 | The clock chip (RTC) is missing or not running | a damaged or missing RTC |
+| E6 | The audio codec is missing (StickS3) | another ESP32-S3 board |
+| E9 | Unknown board | any ESP32 or ESP32-S3 board that is not an M5Stick this firmware knows |
+
+The web installer and `scripts/flash.sh` can only see the chip type before flashing, so they install on any ESP32 or ESP32-S3 device. The check happens afterwards, on the device.
+
+**Safety.** The firmware cannot "brick" the device. The ESP32's flashing mode lives in the chip's ROM, and the firmware never writes eFuses or turns on flash encryption or secure boot. On a device it does not recognise, it drives no pins and writes to no chips, and it never powers off or deep-sleeps while it may be on USB, so the port stays available for flashing something else. On battery, an AXP192 board powers off after 2 minutes on the refusal screen; the M5 button shows the message again before that.
+
+**Getting back to flashing mode:**
+- **StickC, StickC Plus, StickC Plus2:** nothing to do. The USB bridge puts the chip into flashing mode by itself; the device only has to be switched on, since the port disappears while it is off.
+- **StickS3:** its USB is inside the chip, so a sleeping or busy firmware can make the port disappear. Connect USB, then press and hold the side reset button until the green LED flashes: that is flashing mode (from the M5Stack docs; untested here).
 
 ## Power design and battery life
 
@@ -351,7 +388,8 @@ Found while building this on the device:
 ## Project layout
 
 ```
-platformio.ini   environments: m5stick-c-plus (default, all supported models) and test (2-minute WORK session)
+platformio.ini   environments: m5stick-c-plus (default: StickC, StickC Plus, StickC Plus2), m5stick-s3 (StickS3)
+                 and test (2-minute WORK session)
 src/main.cpp     the firmware
 src/boards.h     board profiles: one row per supported model
 scripts/flash.sh choose a connected device, check it and flash it (scripts/flash.py does the work)

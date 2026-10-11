@@ -2,7 +2,8 @@
 // Also runs on the original M5StickC (80x160 ST7735S, no buzzer): detected at boot, it gets a compact
 // status line and signals with the red LED instead of beeps (the LED also blinks with the FINISHED
 // screen, and the power key's short press switches the LED instead of the sound). Same chips and
-// axes otherwise.
+// axes otherwise. The M5StickC Plus2 (no AXP192) and the M5StickS3 (ESP32-S3, separate build) have
+// UNTESTED profiles prepared from the docs; all hardware differences come from src/boards.h.
 //
 // RUNNING  : any orientation except face down. Light sleep between events. At every minute mark
 //            the screen fades in and out over 5 s showing only the minutes; on a layout change or a
@@ -31,6 +32,7 @@
 #include <esp_sleep.h>
 #include <driver/adc.h>
 #include <driver/uart.h>
+#include <sys/time.h>
 
 #ifndef SESSION_MIN
 #define SESSION_MIN 25  // default WORK length, minutes
@@ -51,10 +53,6 @@ constexpr uint8_t  BRIGHTNESS   = 96;
 // per second. Level 7 is the first one visible on the device.
 constexpr uint8_t  GLANCE_LEVELS[] = {7, 8, 8, 8, 7};
 constexpr uint32_t GLANCE_STEP_MS  = 1000;
-
-constexpr gpio_num_t PIN_INT   = GPIO_NUM_35;  // MPU6886 INT (shared with BM8563 INT), active low
-constexpr gpio_num_t PIN_BTN_A = GPIO_NUM_37;  // front "M5" button, active low
-constexpr gpio_num_t PIN_BTN_B = GPIO_NUM_39;  // side button, active low
 
 constexpr uint8_t  MPU = 0x68, RTC_ADDR = 0x51, AXP = 0x34;
 constexpr uint32_t I2C_HZ = 400000;
@@ -109,7 +107,28 @@ static const char* noticeMsg = "";
 static bool     noticeOn = false;
 
 static const BoardProfile& prof() { return PROFILES[profileIdx]; }
-static bool hasBuzzer() { return prof().buzzerPin >= 0; }
+static bool hasBuzzer() { return prof().sound != Sound::LED; }
+static bool axp() { return prof().power == Power::AXP192; }
+// AXP192 calls that M5Unified only provides in ESP32 builds (the AXP192 boards are all ESP32).
+static bool axpUsbPower() {
+#if CONFIG_IDF_TARGET_ESP32
+  return M5.Power.Axp192.isVBUS();
+#else
+  return true;
+#endif
+}
+static void axpExten(bool on) {
+#if CONFIG_IDF_TARGET_ESP32
+  M5.Power.Axp192.setEXTEN(on);
+#else
+  (void)on;
+#endif
+}
+// Pins from the profile (buttons and the IMU / power-key lines are active low).
+static gpio_num_t PIN_BTN_A() { return (gpio_num_t)prof().btnA; }
+static gpio_num_t PIN_BTN_B() { return (gpio_num_t)prof().btnB; }
+static gpio_num_t PIN_INT() { return (gpio_num_t)prof().intPin; }
+static bool btnDown(gpio_num_t pin) { return digitalRead(pin) == LOW; }
 
 // ---------- low level ----------
 
@@ -119,7 +138,8 @@ static bool hasBuzzer() { return prof().buzzerPin >= 0; }
 // connected only while USB power is present; logs flow as usual whenever a computer is attached.
 static bool txAttached = true;
 static void serialFollowUsb() {
-  const bool usb = M5.Power.Axp192.isVBUS();
+  if (!axp()) return;  // needs the AXP192 to see USB power; other boards keep TX attached
+  const bool usb = axpUsbPower();
   if (usb == txAttached) return;
   Serial.flush();
   if (usb) uart_set_pin(UART_NUM_0, 1, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
@@ -132,28 +152,40 @@ static uint8_t rd(uint8_t addr, uint8_t reg) { return M5.In_I2C.readRegister8(ad
 // Light sleep. wakeOnIo: buttons wake it; imuWake: the IMU INT line too (off while already polling
 // after motion, otherwise a re-latching INT turns the sleep into a busy loop).
 static void nap(uint32_t ms, bool wakeOnIo, bool imuWake = true) {
-  imuWake = imuWake && wakeOnIo && womOk;
+  imuWake = imuWake && wakeOnIo && womOk && prof().intPin >= 0;
+  // A power key on a GPIO wakes it too, unless it is held (a held level would wake it at once).
+  const bool keyWake = wakeOnIo && prof().keyPin >= 0 && digitalRead(prof().keyPin) == HIGH;
   Serial.flush();
   esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
   esp_sleep_enable_timer_wakeup((uint64_t)ms * 1000);
   if (wakeOnIo) {
-    gpio_wakeup_enable(PIN_BTN_A, GPIO_INTR_LOW_LEVEL);
-    gpio_wakeup_enable(PIN_BTN_B, GPIO_INTR_LOW_LEVEL);
-    if (imuWake) gpio_wakeup_enable(PIN_INT, GPIO_INTR_LOW_LEVEL);
+    gpio_wakeup_enable(PIN_BTN_A(), GPIO_INTR_LOW_LEVEL);
+    gpio_wakeup_enable(PIN_BTN_B(), GPIO_INTR_LOW_LEVEL);
+    if (imuWake) gpio_wakeup_enable(PIN_INT(), GPIO_INTR_LOW_LEVEL);
+    if (keyWake) gpio_wakeup_enable((gpio_num_t)prof().keyPin, GPIO_INTR_LOW_LEVEL);
     esp_sleep_enable_gpio_wakeup();
   }
   esp_light_sleep_start();
   if (wakeOnIo) {
-    gpio_wakeup_disable(PIN_BTN_A);
-    gpio_wakeup_disable(PIN_BTN_B);
-    if (imuWake) gpio_wakeup_disable(PIN_INT);
+    gpio_wakeup_disable(PIN_BTN_A());
+    gpio_wakeup_disable(PIN_BTN_B());
+    if (imuWake) gpio_wakeup_disable(PIN_INT());
+    if (keyWake) gpio_wakeup_disable((gpio_num_t)prof().keyPin);
   }
 }
 
 // ---------- BM8563 RTC ----------
 static uint8_t bcd(uint8_t v) { return (v >> 4) * 10 + (v & 0x0F); }
 
+// System time in ms (Clock::SYSTEM): kept across light and deep sleep by the RC sleep clock.
+static int64_t systemMs() {
+  struct timeval tv;
+  gettimeofday(&tv, nullptr);
+  return (int64_t)tv.tv_sec * 1000 + tv.tv_usec / 1000;
+}
+
 static int64_t rtcSeconds(bool* valid = nullptr) {
+  if (prof().clock == Clock::SYSTEM) { if (valid) *valid = true; return systemMs() / 1000; }
   uint8_t b[7];
   M5.In_I2C.readRegister(RTC_ADDR, 0x02, b, 7, I2C_HZ);
   if (valid) *valid = !(b[0] & 0x80);
@@ -168,6 +200,7 @@ static int64_t rtcSeconds(bool* valid = nullptr) {
 // RTC time (ms) at the moment `eventMillis` happened: waits for the next second tick (< 1 s)
 // to get sub-second precision without trusting the ESP32's RC sleep clock over long periods.
 static int64_t rtcMsAt(uint32_t eventMillis) {
+  if (prof().clock == Clock::SYSTEM) return systemMs() - (int64_t)(millis() - eventMillis);
   int64_t s0 = rtcSeconds(), s = s0;
   uint32_t t0 = millis();
   while (s == s0 && millis() - t0 < 1100) { nap(10, false); s = rtcSeconds(); }
@@ -175,6 +208,7 @@ static int64_t rtcMsAt(uint32_t eventMillis) {
 }
 
 static void rtcInit() {
+  if (prof().clock != Clock::BM8563) return;
   wr(RTC_ADDR, 0x00, 0x00);  // clock running
   wr(RTC_ADDR, 0x01, 0x00);  // no alarm/timer interrupts on the shared GPIO35 line
   bool valid;
@@ -189,12 +223,20 @@ static void rtcInit() {
 struct Accel { float x, y, z; };
 
 static Accel readAccel() {
-  uint8_t b[6];
-  M5.In_I2C.readRegister(MPU, 0x3B, b, 6, I2C_HZ);
-  auto g = [&](int axis) { return (int16_t)(b[2 * axis] << 8 | b[2 * axis + 1]) / 8192.0f; };  // +-4 g
+  float raw[3];
+  if (prof().imu == Imu::M5UNIFIED) {
+    M5.Imu.update();
+    auto d = M5.Imu.getImuData();
+    raw[0] = d.accel.x; raw[1] = d.accel.y; raw[2] = d.accel.z;
+  } else {
+    uint8_t b[6];
+    M5.In_I2C.readRegister(MPU, 0x3B, b, 6, I2C_HZ);
+    for (int i = 0; i < 3; i++) raw[i] = (int16_t)(b[2 * i] << 8 | b[2 * i + 1]) / 8192.0f;  // +-4 g
+  }
   const BoardProfile& p = prof();
-  return {p.sign[0] * g(p.axis[0]), p.sign[1] * g(p.axis[1]), p.sign[2] * g(p.axis[2])};
+  return {p.sign[0] * raw[p.axis[0]], p.sign[1] * raw[p.axis[1]], p.sign[2] * raw[p.axis[2]]};
 }
+static bool mpu() { return prof().imu == Imu::MPU6886; }
 
 // Layout for a visible pose, or -1 while tilted in between.
 static int layoutOf(const Accel& a) {
@@ -206,10 +248,11 @@ static int layoutOf(const Accel& a) {
   return -1;
 }
 
-static bool imuMotion() { return rd(MPU, 0x3A) & 0xE0; }  // reading INT_STATUS releases INT
+static bool imuMotion() { return mpu() && (rd(MPU, 0x3A) & 0xE0); }  // reading INT_STATUS releases INT
 
 // Accel-only low-power cycle mode (12.5 Hz) with wake-on-motion on the INT pin.
 static void imuInit() {
+  if (!mpu()) return;
   wr(MPU, 0x6B, 0x80); delay(10);  // reset
   wr(MPU, 0x6B, 0x01); delay(5);   // awake, PLL clock
   wr(MPU, 0x6C, 0x07);             // gyro off
@@ -226,6 +269,7 @@ static void imuInit() {
 }
 
 static void imuTapSensitive(bool on) {
+  if (!mpu()) return;
   uint8_t th = on ? WOM_THRESHOLD_TAP : WOM_THRESHOLD;
   wr(MPU, 0x19, on ? ODR_DIV_TAP : ODR_DIV);
   wr(MPU, 0x20, th); wr(MPU, 0x21, th); wr(MPU, 0x22, th);
@@ -233,13 +277,17 @@ static void imuTapSensitive(bool on) {
 
 // Verify the INT -> GPIO35 path using the data-ready interrupt (no physical motion needed).
 static bool imuSelfTest() {
-  pinMode(PIN_INT, INPUT);
+  if (!mpu() || prof().intPin < 0) {
+    Serial.println("IMU INT: not wired to the ESP32, orientation is polled");
+    return false;
+  }
+  pinMode(PIN_INT(), INPUT);
   rd(MPU, 0x3A);
   wr(MPU, 0x38, 0x01);  // data ready -> INT
   delay(100);
-  bool low = digitalRead(PIN_INT) == LOW;
+  bool low = digitalRead(PIN_INT()) == LOW;
   rd(MPU, 0x3A);
-  bool released = digitalRead(PIN_INT) == HIGH;
+  bool released = digitalRead(PIN_INT()) == HIGH;
   wr(MPU, 0x38, 0xE0);
   rd(MPU, 0x3A);
   Serial.printf("IMU INT self-test: asserted=%d released=%d\n", low, released);
@@ -434,10 +482,24 @@ static void setLayout(uint8_t l) {
 // clears the latched status, so presses made while the screen is off are dropped. The AXP192 flags a
 // long press once, at 1.5 s while the key is still held, and reports no release.
 enum : uint8_t { KEY_NONE = 0, KEY_LONG = 1, KEY_SHORT = 2 };
+static uint32_t keyDownAt = 0;
+static bool keyWasDown = false, keyLongSent = false;
 static uint8_t powerKey() {
-  uint8_t st = rd(AXP, 0x46) & 0x03;
-  if (st) wr(AXP, 0x46, 0x03);
-  return st & KEY_SHORT ? KEY_SHORT : st;
+  if (axp()) {
+    uint8_t st = rd(AXP, 0x46) & 0x03;
+    if (st) wr(AXP, 0x46, 0x03);
+    return st & KEY_SHORT ? KEY_SHORT : st;
+  }
+  if (prof().keyPin < 0) return KEY_NONE;  // e.g. the StickS3: its PMIC owns the power button
+  // Power key on a GPIO (StickC Plus2 button C), polled: long press once held for 1.5 s, short press
+  // on release. Like the AXP192 path, a long press is reported while the key is still held.
+  const bool down = digitalRead(prof().keyPin) == LOW;
+  uint8_t ev = KEY_NONE;
+  if (down && !keyWasDown) { keyDownAt = millis(); keyLongSent = false; }
+  if (down && !keyLongSent && millis() - keyDownAt >= 1500) { keyLongSent = true; ev = KEY_LONG; }
+  if (!down && keyWasDown && !keyLongSent) ev = KEY_SHORT;
+  keyWasDown = down;
+  return ev;
 }
 
 static void notice(const char* msg, bool on) {
@@ -502,10 +564,10 @@ static void screenWake(int remS, uint32_t ms = SCREEN_ON_MS) {
   }
 }
 
-// Red LED (StickC only; active low). Released to input when off.
+// Red LED, on boards that signal with it instead of sound (StickC). Released to input when off.
 static void led(bool on) {
-  if (hasBuzzer()) return;
-  if (on) { pinMode(prof().ledPin, OUTPUT); digitalWrite(prof().ledPin, LOW); }
+  if (hasBuzzer() || prof().ledPin < 0) return;
+  if (on) { pinMode(prof().ledPin, OUTPUT); digitalWrite(prof().ledPin, prof().ledActiveLow ? LOW : HIGH); }
   else pinMode(prof().ledPin, INPUT);
 }
 
@@ -563,11 +625,11 @@ static void adjustLength() {
   bool first = true, changed = false;
   uint32_t last = millis();
   do {
-    if (digitalRead(PIN_BTN_B) == LOW) {
+    if (digitalRead(PIN_BTN_B()) == LOW) {
       if (!first) { bumpLength(); changed = true; }
       first = false;
       uint32_t repeatAt = millis() + 500;
-      while (digitalRead(PIN_BTN_B) == LOW) {
+      while (digitalRead(PIN_BTN_B()) == LOW) {
         nap(20, false);
         if ((int32_t)(millis() - repeatAt) >= 0) { bumpLength(); changed = true; repeatAt = millis() + 120; }
       }
@@ -602,13 +664,19 @@ static void resume(uint32_t since) {
 // PAUSED / FINISHED: deep sleep until the IMU sees motion (or button A when finished).
 [[noreturn]] static void deepSleep() {
   flushTapSave(true);
-  M5.In_I2C.bitOff(AXP, 0x12, 1 << 3, I2C_HZ);  // LCD logic power (LDO3) off
-  wr(AXP, 0x46, 0x03);                           // drop pending power-key presses
+  if (axp()) {
+    M5.In_I2C.bitOff(AXP, 0x12, 1 << 3, I2C_HZ);  // LCD logic power (LDO3) off
+    wr(AXP, 0x46, 0x03);                           // drop pending power-key presses
+  }
+  if (prof().power == Power::HOLD_GPIO4) {  // keep the power switched on through deep sleep
+    gpio_hold_en(GPIO_NUM_4);
+    gpio_deep_sleep_hold_en();
+  }
   imuTapSensitive(false);
   imuMotion();                                   // release INT before arming
   esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
-  if (womOk) esp_sleep_enable_ext0_wakeup(PIN_INT, 0);
-  if (state == FINISHED) esp_sleep_enable_ext1_wakeup(1ULL << PIN_BTN_A, ESP_EXT1_WAKEUP_ALL_LOW);
+  if (womOk) esp_sleep_enable_ext0_wakeup(PIN_INT(), 0);
+  if (state == FINISHED) esp_sleep_enable_ext1_wakeup(1ULL << PIN_BTN_A(), ESP_EXT1_WAKEUP_ALL_LOW);
   Serial.flush();
   esp_deep_sleep_start();
 }
@@ -623,16 +691,29 @@ static void pause(uint32_t since) {
 // The buzzer is powered from the AXP192 5 V boost (EXTEN), so it is enabled only while beeping.
 static void beep(int n, int onMs, int offMs) {
   if (!soundOn) return;
-  if (!hasBuzzer()) {  // original M5StickC: the same pattern on the red LED
+  if (prof().sound == Sound::LED) {  // original M5StickC: the same pattern on the red LED
+    if (prof().ledPin < 0) return;
     pinMode(prof().ledPin, OUTPUT);
     for (int i = 0; i < n; i++) {
-      digitalWrite(prof().ledPin, LOW);  delay(onMs);
-      digitalWrite(prof().ledPin, HIGH); if (i + 1 < n) delay(offMs);
+      digitalWrite(prof().ledPin, prof().ledActiveLow ? LOW : HIGH);  delay(onMs);
+      digitalWrite(prof().ledPin, prof().ledActiveLow ? HIGH : LOW); if (i + 1 < n) delay(offMs);
     }
     pinMode(prof().ledPin, INPUT);
     return;
   }
-  M5.Power.Axp192.setEXTEN(true);
+  if (prof().sound == Sound::SPEAKER) {  // codec + speaker (StickS3), started only for the beep
+    M5.Speaker.begin();
+    M5.Speaker.setVolume(160);
+    for (int i = 0; i < n; i++) {
+      M5.Speaker.tone(4000, onMs);
+      delay(onMs + (i + 1 < n ? offMs : 0));
+    }
+    while (M5.Speaker.isPlaying()) delay(5);
+    M5.Speaker.end();
+    return;
+  }
+  const bool exten = prof().sound == Sound::BUZZER_EXTEN;
+  if (exten) axpExten(true);
   delay(20);
   ledcSetup(0, 4000, 8);
   ledcAttachPin(prof().buzzerPin, 0);
@@ -642,7 +723,7 @@ static void beep(int n, int onMs, int offMs) {
   }
   ledcDetachPin(prof().buzzerPin);
   pinMode(prof().buzzerPin, INPUT);
-  M5.Power.Axp192.setEXTEN(false);
+  if (exten) axpExten(false);
 }
 
 // End: WORK three short beeps, BREAK two long ones. Start (after the grace period): one beep, longer
@@ -662,12 +743,139 @@ static void finish() {
   endBeep();
 }
 
+// ---------- first-boot self-identification ----------
+// The board M5Unified detected is checked against the fingerprint in its PROFILES row. If anything
+// does not fit, the timer does not run: refuse() says why. Codes (also in the README):
+//   E1 no motion sensor (IMU)          E2 motion sensor reading implausible   E3 power chip mismatch
+//   E4 display missing / other size    E5 RTC missing or not running          E6 audio codec missing
+//   E9 unknown board (no profile)
+struct Check { const char* code; const char* why; const char* looksLike; };
+
+static Check identify(bool boardKnown) {
+  const BoardProfile& p = prof();
+  if (!boardKnown) return {"E9", "Unknown board", nullptr};
+  const int lng = std::max(M5.Display.width(), M5.Display.height());
+  const int sht = std::min(M5.Display.width(), M5.Display.height());
+  if (lng != p.panelLong || sht != p.panelShort) return {"E4", "Display missing or of another size", nullptr};
+  const bool hasAxp = M5.In_I2C.scanID(0x34), hasPm1 = M5.In_I2C.scanID(0x6E);
+  if (p.pmicAddr ? !M5.In_I2C.scanID(p.pmicAddr) : (hasAxp || hasPm1))
+    return {"E3", "Power chip does not match", nullptr};
+  bool imuThere = p.imu == Imu::MPU6886 ? M5.In_I2C.scanID(MPU) && rd(MPU, 0x75) == 0x19
+                                        : M5.Imu.getType() == p.imuType;
+#ifdef FAKE_NO_IMU  // test build: behave like a board without an IMU (env test-unsupported)
+  imuThere = false;
+#endif
+  if (!imuThere) {
+    const char* like = nullptr;
+    if (p.board == m5::board_t::board_M5StickCPlus) like = "M5StickC Plus SE, which has no motion sensor";
+    if (p.board == m5::board_t::board_M5StickC && M5.In_I2C.scanID(0x6C)) like = "an early M5StickC with the SH200Q sensor";
+    return {"E1", "No motion sensor (IMU)", like};
+  }
+  imuInit();
+  const Accel a = readAccel();
+  const float g = sqrtf(a.x * a.x + a.y * a.y + a.z * a.z);
+  if (g < 0.6f || g > 1.4f) return {"E2", "Motion sensor reading is implausible", nullptr};
+  if (p.clock == Clock::BM8563) {
+    if (!M5.In_I2C.scanID(RTC_ADDR)) return {"E5", "Clock chip (RTC) missing", nullptr};
+    rtcInit();
+    const int64_t s0 = rtcSeconds();
+    const uint32_t t0 = millis();
+    while (rtcSeconds() == s0 && millis() - t0 < 1300) nap(20, false);
+    if (rtcSeconds() == s0) return {"E5", "Clock chip (RTC) is not running", nullptr};
+  }
+  if (p.codec && !M5.In_I2C.scanID(0x18)) return {"E6", "Audio codec missing", nullptr};
+  Serial.printf("IDENTIFIED: %s%s (panel %dx%d, IMU ok %.2f g, RTC %s, power chip %s)\n", p.name,
+                p.tested ? "" : " UNTESTED", lng, sht, g, p.clock == Clock::BM8563 ? "running" : "none (system time)",
+                p.pmicAddr == 0x34 ? "AXP192" : p.pmicAddr == 0x6E ? "M5PM1" : "none");
+  return {nullptr, nullptr, nullptr};
+}
+
+// Unsupported board: no timer. Says why on the screen (if there is one), beeps five times (only on a
+// recognised board, whose buzzer / LED pins are known: nothing is driven on an unknown board), logs
+// "UNSUPPORTED: ...". It never powers off or deep-sleeps while it may be on USB, so the port stays
+// there for flashing something else; on battery (AXP192 boards) it powers off after 2 minutes.
+[[noreturn]] static void refuse(const Check& c, bool boardKnown) {
+  Serial.printf("UNSUPPORTED: %s %s%s%s\n", c.code, c.why, c.looksLike ? " - looks like " : "",
+                c.looksLike ? c.looksLike : "");
+  const bool display = M5.Display.width() > 0;
+  auto show = [&]() {
+    if (!display) return;
+    auto& d = M5.Display;
+    d.setRotation(1);
+    d.wakeup();
+    d.fillScreen(TFT_BLACK);
+    const bool small = d.width() < 200;
+    int y = 4;
+    // Draws `text`, wrapped to the screen width: after a space, or after a '/' in a long URL.
+    auto line = [&](const char* text, uint16_t color, const lgfx::IFont* font) {
+      d.setFont(font);
+      d.setTextSize(1);
+      d.setTextColor(color);
+      d.setTextDatum(top_left);
+      String rest = text;
+      while (rest.length()) {
+        int cut = rest.length();
+        while (cut > 1 && d.textWidth(rest.substring(0, cut)) > d.width() - 8) {
+          int sp = -1;
+          for (int i = cut - 1; i > 0 && sp < 0; i--) if (rest[i] == ' ' || rest[i - 1] == '/') sp = i;
+          cut = sp > 0 ? sp : cut - 1;
+        }
+        d.drawString(rest.substring(0, cut), 4, y);
+        y += d.fontHeight() + 2;
+        rest = rest.substring(cut);
+        rest.trim();
+      }
+    };
+    char buf[64];
+    const lgfx::IFont* title = small ? (const lgfx::IFont*)&fonts::Font2 : (const lgfx::IFont*)&fonts::Font4;
+    const lgfx::IFont* body = small ? (const lgfx::IFont*)&fonts::Font0 : (const lgfx::IFont*)&fonts::Font2;
+    line("Unsupported device", TFT_RED, title);
+    snprintf(buf, sizeof buf, "%s: %s", c.code, c.why);
+    line(buf, TFT_WHITE, body);
+    if (c.looksLike) { snprintf(buf, sizeof buf, "Looks like %s", c.looksLike); line(buf, TFT_YELLOW, body); }
+    line("The Pomodoro timer cannot run here.", TFT_LIGHTGREY, body);
+    line("github.com/romanaerl/M5StickPomodoro", TFT_LIGHTGREY, body);
+    d.setBrightness(BRIGHTNESS);
+  };
+  show();
+  soundOn = true;
+  if (boardKnown) beep(5, 120, 120);
+  uint32_t shownAt = millis(), lastBeep = millis();
+  bool lit = display;
+  for (;;) {
+    if (!display && boardKnown && millis() - shownAt < 60000 && millis() - lastBeep >= 10000) {
+      beep(5, 120, 120);  // no screen: repeat the signal for a minute
+      lastBeep = millis();
+    }
+    if (millis() - shownAt >= 120000) {
+      if (lit) { M5.Display.setBrightness(0); M5.Display.sleep(); lit = false; }
+      if (boardKnown && axp() && !axpUsbPower()) M5.Power.powerOff();  // on battery: off
+    }
+    if (boardKnown && btnDown(PIN_BTN_A())) {  // M5 button: show the message and signal again
+      show();
+      lit = display;
+      shownAt = lastBeep = millis();
+      beep(5, 120, 120);
+      while (btnDown(PIN_BTN_A())) nap(20, false);
+    }
+    nap(200, false);  // timer-only light sleep: no pins are armed
+  }
+}
+
 // ---------- main ----------
 void setup() {
   setCpuFrequencyMhz(80);
   auto cause = esp_sleep_get_wakeup_cause();
-  M5.In_I2C.begin(I2C_NUM_1, GPIO_NUM_21, GPIO_NUM_22);
   bool warm = rtcMagic == MAGIC && (cause == ESP_SLEEP_WAKEUP_EXT0 || cause == ESP_SLEEP_WAKEUP_EXT1);
+#if CONFIG_IDF_TARGET_ESP32S3
+  constexpr bool S3 = true;
+  const int sda = warm ? prof().sda : 47, scl = warm ? prof().scl : 48;
+#else
+  constexpr bool S3 = false;
+  const int sda = warm ? prof().sda : 21, scl = warm ? prof().scl : 22;
+#endif
+  // Internal I2C before M5.begin(): the profile chosen at cold boot after a wake, else this chip's bus.
+  M5.In_I2C.begin(I2C_NUM_1, (gpio_num_t)sda, (gpio_num_t)scl);
 
   // Fast path after a motion wake: decide from the pose before touching the display.
   uint32_t since = millis();
@@ -678,40 +886,53 @@ void setup() {
     if (!wake) { sleepWakes++; deepSleep(); }
   }
 
-  M5.In_I2C.bitOn(AXP, 0x12, 1 << 3, I2C_HZ);  // LCD logic power (LDO3) on
-  delay(5);
+  if (!S3 && (!warm || axp())) {  // a cold boot does not know the board yet: a missing AXP192 just NACKs
+    M5.In_I2C.bitOn(AXP, 0x12, 1 << 3, I2C_HZ);  // LCD logic power (LDO3) on
+    delay(5);
+  }
   Serial.begin(115200);
 
   auto cfg = M5.config();
   cfg.output_power = false;  // 5 V boost (EXTEN) off
-  cfg.internal_imu = false;  // configured manually for low-power WOM
+  cfg.internal_imu = S3;     // ESP32 boards: MPU6886 configured manually for low-power WOM; S3: M5.Imu
   cfg.internal_mic = false;
-  cfg.internal_spk = false;
+  cfg.internal_spk = S3;     // S3: speaker codec (started only for beeps)
   cfg.clear_display = true;
   M5.begin(cfg);
+#if CONFIG_IDF_TARGET_ESP32S3
+  M5.Speaker.end();
+#else
   adc_power_release();  // M5Unified keeps the SAR ADC powered for GPIO36/39 debouncing
-  serialFollowUsb();
+#endif
   if (!warm) {  // pick the board profile (deep-sleep wakes keep the one chosen at cold boot)
-    profileIdx = 0;
-    for (size_t i = 0; i < sizeof PROFILES / sizeof PROFILES[0]; i++)
-      if (PROFILES[i].board == M5.getBoard()) profileIdx = i;
-    if (PROFILES[profileIdx].board != M5.getBoard())
-      Serial.printf("Unknown board %d: using the %s profile\n", (int)M5.getBoard(), PROFILES[0].name);
+    int found = -1, fallback = -1;
+    for (size_t i = 0; i < sizeof PROFILES / sizeof PROFILES[0]; i++) {
+      if (PROFILES[i].s3 != S3) continue;
+      if (fallback < 0) fallback = i;
+      if (PROFILES[i].board == M5.getBoard()) found = i;
+    }
+    profileIdx = found >= 0 ? found : fallback;
+    Serial.printf("\nPomodoro first boot: board=%d profile=%s\n", (int)M5.getBoard(), found >= 0 ? prof().name : "none");
+    // Check the hardware before touching any board-specific pin or chip; refuse() does not return.
+    const Check c = identify(found >= 0);
+    if (c.code) refuse(c, found >= 0);
   }
+  if (prof().power == Power::HOLD_GPIO4) gpio_hold_dis(GPIO_NUM_4);  // M5.begin() drives it HIGH again
+  serialFollowUsb();
   M5.Display.setBrightness(0);
-  pinMode(PIN_BTN_A, INPUT);
-  pinMode(PIN_BTN_B, INPUT);
-  pinMode(PIN_INT, INPUT);
+  pinMode(PIN_BTN_A(), INPUT);
+  pinMode(PIN_BTN_B(), INPUT);
+  if (prof().intPin >= 0) pinMode(PIN_INT(), INPUT);
+  if (prof().keyPin >= 0) pinMode(prof().keyPin, INPUT);
 
   Serial.printf("\nPomodoro boot: wake cause=%d warm=%d board=%d sleep wakes=%u\n", cause, warm,
                 (int)M5.getBoard(), sleepWakes);
   sleepWakes = 0;
 
   if (!warm) {  // cold boot or reset: always a new WORK session
-    wr(AXP, 0x36, (rd(AXP, 0x36) & ~0x30) | 0x10);  // power key long press = 1.5 s
-    rtcInit();
-    imuInit();
-    Serial.printf("IMU WHO_AM_I=0x%02x (MPU6886 = 0x19)\n", rd(MPU, 0x75));
+    if (!prof().tested) Serial.printf("Profile %s is UNTESTED on a real device: see PORTING.md\n", prof().name);
+    if (axp()) wr(AXP, 0x36, (rd(AXP, 0x36) & ~0x30) | 0x10);  // power key long press = 1.5 s
+    // identify() has already initialised the IMU and the RTC.
     womOk = imuSelfTest();
     loadSettings();
     mode = WORK;
@@ -729,7 +950,10 @@ void setup() {
   setLayout(l < 0 ? FLAT : l);
 }
 
-static void backlightLevel(uint8_t level) {  // 0 = off, else AXP192 LDO2 = 1.8 V + 0.1 V * level
+// 0 = off, else AXP192 LDO2 = 1.8 V + 0.1 V * level. PWM backlights (no AXP192) get level * 8 / 255
+// instead: an untested guess at a similar soft step.
+static void backlightLevel(uint8_t level) {
+  if (!axp()) { M5.Display.setBrightness(level * 8); return; }
   if (!level) { M5.In_I2C.bitOff(AXP, 0x12, 1 << 2, I2C_HZ); return; }
   wr(AXP, 0x28, (rd(AXP, 0x28) & 0x0F) | (level << 4));
   M5.In_I2C.bitOn(AXP, 0x12, 1 << 2, I2C_HZ);
@@ -752,7 +976,7 @@ static void glance(int remS) {
     for (int i = 0; i < 5 && !stop; i++) {  // poll every 200 ms
       nap(GLANCE_STEP_MS / 5, true, false);
       key = powerKey();
-      stop = key || digitalRead(PIN_BTN_A) == LOW || digitalRead(PIN_BTN_B) == LOW || readAccel().z < DOWN_G;
+      stop = key || digitalRead(PIN_BTN_A()) == LOW || digitalRead(PIN_BTN_B()) == LOW || readAccel().z < DOWN_G;
     }
     if (stop) break;
   }
@@ -775,16 +999,16 @@ static bool handleButtons(int remS) {
     screenWake(remS);
     render(remS);
   }
-  if (digitalRead(PIN_BTN_A) == LOW) {
+  if (digitalRead(PIN_BTN_A()) == LOW) {
     if (millis() - lastPressAt < MODE_SWITCH_MS) mode ^= 1;  // second press during the grace period
     startSession();
-    while (digitalRead(PIN_BTN_A) == LOW) nap(20, false);
+    while (digitalRead(PIN_BTN_A()) == LOW) nap(20, false);
     lastPressAt = millis();
     return true;
   }
-  if (digitalRead(PIN_BTN_B) == LOW) {  // GPIO39 can glitch: require a held level
+  if (digitalRead(PIN_BTN_B()) == LOW) {  // GPIO39 can glitch: require a held level
     nap(20, false);
-    if (digitalRead(PIN_BTN_B) == LOW) { adjustLength(); return true; }
+    if (digitalRead(PIN_BTN_B()) == LOW) { adjustLength(); return true; }
   }
   return false;
 }

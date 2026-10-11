@@ -5,12 +5,14 @@
     scripts/flash.sh --port PORT              use this port instead of choosing
     scripts/flash.sh --expect "M5StickC"      refuse unless the device is identified as this model
     scripts/flash.sh --port PORT --yes        no questions (for scripts)
-    scripts/flash.sh --env test               flash another PlatformIO environment
+    scripts/flash.sh --env test               flash another PlatformIO environment (default: by chip)
     scripts/flash.sh --list                   only list the connected devices
 
 Only the chosen device is touched. Checking it restarts it once (to read its boot log) before
-flashing. The firmware is the same for every supported model: it detects the board at boot and
-picks its profile from src/boards.h, which is also where this script gets the model names.
+flashing. The firmware is the same for every supported ESP32 model and has its own build for the
+ESP32-S3 (StickS3); the build is chosen from the chip. The firmware detects the board at boot and
+picks its profile from src/boards.h, which is also where this script gets the model names and which
+of them are tested on a real device.
 
 On macOS the VoiceOver braille daemon (scrod) opens new USB serial ports looking for braille
 displays and blocks flashing. If it holds the chosen port it is stopped (macOS restarts it later).
@@ -29,8 +31,11 @@ from serial.tools import list_ports
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BOARDS_H = os.path.join(ROOT, "src", "boards.h")
 ESPTOOL = os.path.expanduser("~/.platformio/packages/tool-esptoolpy/esptool.py")
-# Chips the firmware is built for. StickC and StickC Plus both use the ESP32-PICO-D4.
-SUPPORTED_CHIPS = ("ESP32-PICO-D4",)
+# Chips the firmware is built for, with their PlatformIO environment and the model they point to.
+# StickC and StickC Plus both use the ESP32-PICO-D4; the Plus2 the ESP32-PICO-V3-02.
+CHIP_ENVS = {"ESP32-PICO-D4": "m5stick-c-plus", "ESP32-PICO-V3-02": "m5stick-c-plus", "ESP32-S3": "m5stick-s3"}
+CHIP_MODELS = {"ESP32-PICO-D4": "StickC or StickC Plus", "ESP32-PICO-V3-02": "M5StickC Plus2",
+               "ESP32-S3": "M5StickS3"}
 # M5GFX board ids printed by the firmware ("board=N"), for boot logs without "profile=".
 BOARD_IDS = {3: "M5StickC", 4: "M5StickC Plus", 5: "M5StickC Plus2"}
 
@@ -39,6 +44,12 @@ def known_models():
     """Model names from the PROFILES table in src/boards.h."""
     text = open(BOARDS_H, encoding="utf-8").read()
     return re.findall(r'\{\s*m5::board_t::\w+\s*,\s*"([^"]+)"', text)
+
+
+def untested_models():
+    """Model names whose `tested` field in src/boards.h is false."""
+    text = open(BOARDS_H, encoding="utf-8").read()
+    return re.findall(r'\{\s*m5::board_t::\w+\s*,\s*"([^"]+)"\s*,\s*false', text)
 
 
 def usb_ports():
@@ -103,6 +114,12 @@ def boot_log(port, seconds=4.0):
 
 def identify(log, models):
     """(model, firmware) from a boot log."""
+    m = re.search(r"IDENTIFIED: (.+?)(?: UNTESTED)? \(", log)
+    if m:
+        return m.group(1), "M5StickPomodoro"
+    m = re.search(r"UNSUPPORTED: (.+)", log)
+    if m:
+        return None, "M5StickPomodoro (it reported: unsupported device, " + m.group(1).strip() + ")"
     m = re.search(r"profile=(.+?) battery=", log)
     if m:
         return m.group(1), "M5StickPomodoro"
@@ -129,12 +146,14 @@ def main():
     ap.add_argument("--expect", help="refuse unless the device is identified as this model")
     ap.add_argument("--yes", action="store_true", help="do not ask for confirmation")
     ap.add_argument("--force", action="store_true", help="flash even if the model or chip is not recognised")
-    ap.add_argument("--env", default="m5stick-c-plus", help="PlatformIO environment (default: %(default)s)")
+    ap.add_argument("--env", help="PlatformIO environment (default: chosen from the chip)")
     ap.add_argument("--list", action="store_true", help="only list the connected devices")
     args = ap.parse_args()
 
     models = known_models()
-    print("Supported models (src/boards.h): " + ", ".join(models))
+    untested = untested_models()
+    print("Supported models (src/boards.h): "
+          + ", ".join(m + (" (UNTESTED)" if m in untested else "") for m in models))
     if args.expect and args.expect.lower() not in (m.lower() for m in models):
         sys.exit(f'--expect "{args.expect}" is not a known model')
 
@@ -170,22 +189,30 @@ def main():
     print(f"  firmware: {firmware}")
 
     problems = []
-    if info["chip"] not in SUPPORTED_CHIPS:
+    env = args.env or CHIP_ENVS.get(info["chip"])
+    if info["chip"] not in CHIP_ENVS:
         problems.append(f"chip {info['chip']} is not supported by this firmware")
+    elif args.env and (CHIP_ENVS[info["chip"]] == "m5stick-s3") != ("s3" in args.env):
+        problems.append(f"--env {args.env} is not built for the {info['chip']}")
+    hint = model or CHIP_MODELS.get(info["chip"], "")
+    if any(u.lower() == hint.lower() for u in untested):
+        print(f"  WARNING:  the {hint} profile is UNTESTED on a real device (prepared from the docs); see PORTING.md")
     if model and model.lower() not in (m.lower() for m in models):
         problems.append(f"{model} has no profile in src/boards.h (see PORTING.md)")
     if args.expect and (model or "").lower() != args.expect.lower():
         problems.append(f'expected "{args.expect}", found "{model or "an unidentified device"}"')
     if not model and not args.expect:
-        print("  note:     the model could not be read from the device; an ESP32-PICO-D4 with 4MB is a\n"
-              "            StickC or StickC Plus, and the firmware picks the right profile at boot.")
+        print(f"  note:     the model could not be read from the device; an {info['chip']} is a "
+              f"{CHIP_MODELS.get(info['chip'], 'board this firmware does not know')},\n"
+              "            and the firmware picks the right profile at boot.")
     if problems:
         for p in problems:
             print(f"  PROBLEM:  {p}")
         if not args.force:
             sys.exit("Not flashed (use --force to flash anyway).")
 
-    if not args.yes and ask(f"\nFlash M5StickPomodoro ({args.env}) onto {port}? [y/N] ").lower() not in ("y", "yes"):
+    env = env or "m5stick-c-plus"  # only reached with --force on an unknown chip
+    if not args.yes and ask(f"\nFlash M5StickPomodoro ({env}) onto {port}? [y/N] ").lower() not in ("y", "yes"):
         sys.exit("Not flashed.")
     err = free_port(port)  # scrod may have grabbed it again
     if err:
@@ -193,7 +220,20 @@ def main():
     pio = os.path.expanduser("~/.platformio/penv/bin/pio")
     if not os.path.exists(pio):
         pio = "pio"
-    sys.exit(subprocess.run([pio, "run", "-e", args.env, "-t", "upload", "--upload-port", port], cwd=ROOT).returncode)
+    rc = subprocess.run([pio, "run", "-e", env, "-t", "upload", "--upload-port", port], cwd=ROOT).returncode
+    if rc:
+        sys.exit(rc)
+    # The firmware checks the hardware at its first boot: show what it found.
+    print(f"\nReading the self-check from {port} ...")
+    try:
+        time.sleep(1)
+        lines = [l for l in boot_log(port, 6).splitlines() if l.startswith(("IDENTIFIED:", "UNSUPPORTED:"))]
+    except (serial.SerialException, OSError) as e:
+        lines = [f"(could not read the port: {e})"]
+    for line in lines or ["(no self-check line in the log; the device may need a manual restart)"]:
+        print("  " + line)
+    if any(l.startswith("UNSUPPORTED:") for l in lines):
+        sys.exit("The firmware is installed, but this device is not supported: the timer will not run.")
 
 
 if __name__ == "__main__":

@@ -131,8 +131,9 @@
     <div class="install-steps">
     <ol>
       <li>Connect the M5Stick over USB and <b>switch it on</b> (the port only exists while it is on).</li>
-      <li>Press <b>Connect</b> and pick the port with <code>usbserial</code> in its name.</li>
-      <li>Press <b>Install</b> and wait. The device restarts by itself when the install is done.</li>
+      <li>Press <b>Connect</b> and pick the port with <code>usbserial</code> in its name (StickS3: <code>usbmodem</code> or "USB JTAG/serial").</li>
+      <li>Press <b>Install</b> and wait. The right build for your chip is picked by itself, and the device restarts when the install is done.</li>
+      <li>At its first start the timer checks the hardware. <b>"Unsupported device"</b> on the screen, or <b>five short beeps</b>, means this model is not supported (see the guide below).</li>
     </ol>
     <p class="note">Updating keeps your saved settings. One firmware fits every supported model; the board is detected at boot.</p>
     <p class="note">This page counts visits, connections and successful installs anonymously with

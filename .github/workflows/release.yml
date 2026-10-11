@@ -1,5 +1,6 @@
 # Builds the firmware on every push and pull request. On a version tag (v1.2.3) it also publishes a
-# GitHub release with the single-file image M5StickPomodoro-v1.2.3.bin (flash it at offset 0x0).
+# GitHub release with the single-file images M5StickPomodoro-v1.2.3.bin (ESP32: StickC, StickC Plus,
+# StickC Plus2) and M5StickPomodoro-v1.2.3-S3.bin (ESP32-S3: StickS3); flash either at offset 0x0.
 name: build
 
 on:
@@ -45,5 +46,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" dist/M5StickPomodoro-"$GITHUB_REF_NAME".bin \
+            dist/M5StickPomodoro-"$GITHUB_REF_NAME"-S3.bin \
             --title "M5StickPomodoro $GITHUB_REF_NAME" \
-            --notes "Single-file firmware for the M5StickC Plus and the original M5StickC (one image for both; the board is detected at boot). Flash it at offset 0x0 — see the README: Flashing without building."
+            --notes "Single-file firmware. M5StickPomodoro-$GITHUB_REF_NAME.bin: M5StickC Plus and M5StickC (tested), M5StickC Plus2 (untested); the board is detected at boot. M5StickPomodoro-$GITHUB_REF_NAME-S3.bin: M5StickS3 (untested). Flash at offset 0x0 — see the README: Flashing without building."
