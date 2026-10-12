@@ -49,8 +49,8 @@ You control it mostly by **how the device is placed**: put it face down to pause
 
 | Model | Status | Notes |
 |---|---|---|
-| **M5StickC Plus v1.1** | ✅ tested | Main target; all features as described here. |
 | **M5StickC (original)** | ✅ tested | No buzzer: the red LED blinks instead of beeping, and the power button's short press switches the LED (`LED ON` / `LED OFF`). Smaller 80×160 screen: compact status line; in portrait it shows only the mode and battery (option flags such as `NO LED` / `TAP` appear in landscape). Only units with the MPU6886 IMU (early SH200Q units are not supported). |
+| **M5StickC Plus v1.1** | ✅ tested | Main target; all features as described here. |
 | **M5StickC Plus2** | ⚠️ untested | Prepared from the docs, not yet run on a device. No AXP192: power held by GPIO4, PWM backlight, buzzer without the 5 V boost, power button (C) on GPIO35. Its IMU interrupt is not documented, so orientation is polled once a second (no deep sleep while paused, no tap-to-wake). |
 | **M5StickS3** | ⚠️ untested | Prepared from the docs, not yet run on a device; ESP32-S3, its own build. BMI270 IMU polled (no deep sleep while paused, no tap-to-wake), speaker instead of the buzzer, no RTC documented (time from the less accurate ESP32 clock), and the power button belongs to the power chip (no sound / tap toggles). |
 | **M5StickC Plus SE** | ❌ not supported | No motion sensor (IMU). The firmware recognises it and shows "Unsupported device" (E1) instead of running. |

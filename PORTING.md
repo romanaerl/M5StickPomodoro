@@ -4,8 +4,8 @@
 
 | Model | Status |
 |---|---|
-| **M5StickC Plus** | Main target; developed and tested on it. |
 | **M5StickC** (original) | Supported and tested; see [its notes](#m5stickc-original). |
+| **M5StickC Plus** | Main target; developed and tested on it. |
 | **M5StickC Plus2** | **Untested.** Profile and code prepared from the docs; see [its notes](#m5stickc-plus2). |
 | **M5StickS3** | **Untested.** Profile, code and its own build (`m5stick-s3`) prepared from the docs; see [its notes](#m5sticks3). |
 
