@@ -4,7 +4,7 @@
 
 **[Install from the browser](https://romanaerl.github.io/M5StickPomodoro/)** — one click, no tools, settings kept. Or **[download the latest firmware](https://github.com/romanaerl/M5StickPomodoro/releases/latest)** to flash it yourself.
 
-A standalone, battery-friendly Pomodoro timer for the **M5StickC Plus** and the original **M5StickC**.
+A standalone, battery-friendly Pomodoro timer for the **M5Stick series**, including **M5StickC**, **M5StickC Plus V1.1**, **M5StickC Plus2** and **M5StickS3**.
 
 You control it mostly by **how the device is placed**: put it face down to pause, stand it on its end to see a big countdown bar, tap the table to glance at it. Three buttons cover the rest. It needs no phone, no Wi-Fi, no Bluetooth and no cloud. Flash it once and it just works.
 
