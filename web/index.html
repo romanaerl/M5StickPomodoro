@@ -41,7 +41,6 @@
     .selfcheck.ok { border-left-color: #1a7f37; }
     .selfcheck.warn { border-left-color: #9a6700; }
     .selfcheck.bad { border-left-color: #cf222e; }
-    .selfcheck-button { margin-top: 10px; font: inherit; font-size: 14px; padding: 4px 10px; cursor: pointer; }
     /* Browsers without Web Serial (phones, Safari, ...) only get the "use Chrome or Edge" message. */
     esp-web-install-button[install-unsupported] ~ .install-steps { display: none; }
     .unsupported { display: block; font-size: 17px; }
@@ -145,8 +144,6 @@
         The device shows the same: <b>"Unsupported device"</b> on its screen, or <b>five short beeps</b>, means this
         model is not supported (see "Is my M5Stick supported?" below).</li>
     </ol>
-    <button type="button" class="selfcheck-button" id="selfcheck-button">Check my device</button>
-    <span class="note">reads the self-check of a device that already has the timer (it restarts once).</span>
     <p class="note">Updating keeps your saved settings. One firmware fits every supported model; the board is detected at boot.</p>
     <p class="note">This page counts visits, connections and successful installs anonymously with
       <a href="https://www.goatcounter.com">GoatCounter</a> (no cookies, no personal data).</p>
@@ -285,7 +282,7 @@ __DOCS__
 <script>
   // Self-check (see "Is my M5Stick supported?"): the firmware prints one line at its first boot,
   // "IDENTIFIED: <model> ..." or "UNSUPPORTED: <code> <reason> - looks like <model>". After an install
-  // (when the installer closes) and with the "Check my device" button, the page restarts the device
+  // (when the installer closes) the page restarts the device
   // over Web Serial (RTS pulse on EN, like esptool) and reads that line. Counted as "selfcheck-<result>".
   var selfCheck = (function () {
     var box = document.getElementById("selfcheck");
@@ -313,8 +310,8 @@ __DOCS__
         if (opened || port.readable) await port.close();
       } catch (e) {
         try { await port.close(); } catch (_) {}
-        show("warn", "Could not read the device (" + esc(e.message) + "). Switch it off and on, then press " +
-          "<b>Check my device</b>. On the StickS3 the USB port restarts with the chip, so this may not work there.");
+        show("warn", "Could not read the device (" + esc(e.message) + "). The device shows the result itself: " +
+          "the timer starts, or \"Unsupported device\" on its screen and five short beeps.");
         countEvent("selfcheck-error", "Self-check: could not read");
         return;
       }
@@ -331,18 +328,11 @@ __DOCS__
         show("bad", "&#9940; <b>Unsupported device</b>: " + esc(bad[1]) + ". The timer will not run on it (" + codes + ").");
         countEvent("selfcheck-unsupported", "Self-check: " + bad[1]);
       } else {
-        show("warn", "No self-check line came from the device. It may not have this timer yet, or it did not restart: " +
-          "switch it off and on, then press <b>Check my device</b>.");
+        show("warn", "No self-check line came from the device in time. The device shows the result itself: " +
+          "the timer starts, or \"Unsupported device\" on its screen and five short beeps.");
         countEvent("selfcheck-none", "Self-check: no line");
       }
     }
-    var btn = document.getElementById("selfcheck-button");
-    if (!("serial" in navigator)) { btn.hidden = true; if (btn.nextElementSibling) btn.nextElementSibling.hidden = true; }
-    btn.addEventListener("click", async function () {
-      var port;
-      try { port = await navigator.serial.requestPort(); } catch (e) { return; }  // no port picked
-      run(port);
-    });
     return { run: run };
   })();
 
