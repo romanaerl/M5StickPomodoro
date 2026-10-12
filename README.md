@@ -4,7 +4,7 @@
 
 **[Install from the browser](https://romanaerl.github.io/M5StickPomodoro/)** — one click, no tools, settings kept. Or **[download the latest firmware](https://github.com/romanaerl/M5StickPomodoro/releases/latest)** to flash it yourself.
 
-A standalone, battery-friendly Pomodoro timer for the **M5Stick series**, including **M5StickC**, **M5StickC Plus V1.1**, **M5StickC Plus2** and **M5StickS3**.
+A standalone, battery-friendly, gesture/position controlled Pomodoro timer for the **M5Stick series**, including **M5StickC**, **M5StickC Plus V1.1**, **M5StickC Plus2** and **M5StickS3**.
 
 You control it mostly by **how the device is placed**: put it face down to pause, stand it on its end to see a big countdown bar, tap the table to glance at it. Three buttons cover the rest. It needs no phone, no Wi-Fi, no Bluetooth and no cloud. Flash it once and it just works.
 
@@ -397,8 +397,9 @@ scripts/build_release.sh  build the single-file release image into dist/
 .github/workflows/release.yml  CI build; publishes a release with the image for every v* tag
 scripts/build_web.sh      build the web installer site into dist/web
 scripts/render_docs.py    render README.md and PORTING.md into the site, so it always matches the repository
+scripts/draw_diagrams.py  draw the SVG diagrams in docs/ (and the picture in the web installer header)
 web/index.html            the web installer page
 .github/workflows/pages.yml    publishes the web installer to GitHub Pages from the production branch (on pushes and tags)
 PORTING.md       supported models, adding a board profile, notes on other M5Stick models
-docs/            the diagrams used in this README (SVG)
+docs/            the diagrams used in this README and on the web installer page (SVG)
 ```
