@@ -315,6 +315,21 @@ static int confirmPose(uint32_t* since) {
   return 0;
 }
 
+// After a motion wake: the pose once the device has stopped moving. A wake comes at the start of a move
+// (picked up, turned over), and a pose confirmed in mid-turn is not where the device ends up; if it then
+// settles gently, below the wake-on-motion threshold, nothing wakes it again and the end pose is missed
+// (e.g. turned face down after FINISHED, which then never counts). So the check repeats while the IMU
+// still reports motion, for up to ~6 s.
+static int settledPose(uint32_t* since) {
+  imuMotion();  // clear the wake event itself
+  int pose = 0;
+  for (int i = 0; i < 3; i++) {
+    pose = confirmPose(since);
+    if (!imuMotion()) break;  // no motion during the check: this is the end pose
+  }
+  return pose;
+}
+
 // ---------- persistence ----------
 // The running state lives in RTC memory across deep sleep; power-on always starts a new WORK session,
 // so only the settings go to NVS, and only when they change.
@@ -880,7 +895,7 @@ void setup() {
   // Fast path after a motion wake: decide from the pose before touching the display.
   uint32_t since = millis();
   if (warm && cause == ESP_SLEEP_WAKEUP_EXT0) {
-    int pose = confirmPose(&since);
+    int pose = settledPose(&since);
     if (state == FINISHED && pose == -1) finishedDown = true;
     bool wake = pose == 1 && (state == PAUSED || (state == FINISHED && finishedDown));
     if (!wake) { sleepWakes++; deepSleep(); }
