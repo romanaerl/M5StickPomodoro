@@ -7,7 +7,7 @@
 | **M5StickC** (original) | Supported and tested; see [its notes](#m5stickc-original). |
 | **M5StickC Plus** | Main target; developed and tested on it. |
 | **M5StickC Plus2** | **Untested.** Profile and code prepared from the docs; see [its notes](#m5stickc-plus2). |
-| **M5StickS3** | **Untested.** Profile, code and its own build (`m5stick-s3`) prepared from the docs; see [its notes](#m5sticks3). |
+| **M5StickS3** | **Partly tested** on a device; its own build (`m5stick-s3`); see [its notes](#m5sticks3). |
 
 Untested profiles have `tested = false` in `src/boards.h`. The boot log then prints
 `Profile ... is UNTESTED on a real device`, and `scripts/flash.sh` warns before flashing.
@@ -41,7 +41,7 @@ Steps:
 
 Models with a different power chip, IMU or pinout need code changes as well; the sections below list them.
 
-> The Plus2 and StickS3 sections have not been tested on real hardware. Treat them as a checklist, not as a verified recipe.
+> The Plus2 section has not been tested on real hardware, and the StickS3 one only partly. Treat them as a checklist, not as a verified recipe.
 
 ## Hardware-specific places in `src/main.cpp`
 
