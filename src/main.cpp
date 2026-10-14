@@ -380,8 +380,8 @@ static void imuInit() {
 
 static void imuTapSensitive(bool on) {
   // StickS3: any-motion samples at 50 Hz and smooths a tap more than the MPU6886 at 100 Hz, so its
-  // tap threshold is lower (40 and 20 mg were felt as less sensitive than the other models).
-  if (pm1Imu()) { bmiAnyMotion(on ? 10 : 80, on ? 1 : 2); return; }
+  // tap threshold is lower (40 and 20 mg felt less sensitive than the other models; 10 mg was close to the limit).
+  if (pm1Imu()) { bmiAnyMotion(on ? 15 : 80, on ? 1 : 2); return; }
   if (!mpu()) return;
   uint8_t th = on ? WOM_THRESHOLD_TAP : WOM_THRESHOLD;
   wr(MPU, 0x19, on ? ODR_DIV_TAP : ODR_DIV);

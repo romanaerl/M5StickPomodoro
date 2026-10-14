@@ -120,7 +120,7 @@ env `m5stick-s3`; `scripts/flash.sh` picks it from the chip, and the web install
 | Backlight | PWM on GPIO38: dark during light sleep | No light sleep while the backlight is lit (it flickered) |
 | Sound | ES8311 codec + speaker; amplifier on PMIC G3 | `Sound::SPEAKER`, started for each beep; G3 is set and read back with retries (single writes were sometimes missed: a click, no tone). Volume 90/255, beeps at least 140 ms. |
 | Buttons | GPIO11 (front), GPIO12 (side) | From the profile |
-| IMU | BMI270 at 0x68; INT1 to PMIC G4; the PMIC's IRQ output G1 goes to GPIO13 | Read directly (works before `M5.begin()` after a wake). Any-motion feature on INT1 (80 mg; taps 10 mg), PMIC IRQ on G4 only; GPIO13 is the wake-on-motion line, so deep sleep and taps work as on the Plus. Self-test: data-ready through the same path. |
+| IMU | BMI270 at 0x68; INT1 to PMIC G4; the PMIC's IRQ output G1 goes to GPIO13 | Read directly (works before `M5.begin()` after a wake). Any-motion feature on INT1 (80 mg; taps 15 mg), PMIC IRQ on G4 only; GPIO13 is the wake-on-motion line, so deep sleep and taps work as on the Plus. Self-test: data-ready through the same path. |
 | RTC | None found | `Clock::SYSTEM`: ESP32 time, less accurate across sleep |
 | Internal I2C | SDA 47 / SCL 48 | From the profile |
 
