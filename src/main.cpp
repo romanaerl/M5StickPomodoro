@@ -51,7 +51,7 @@ constexpr uint32_t FINISHED_SCREEN_MS = 2 * 60 * 1000;  // blinking, unless turn
 constexpr uint32_t BLINK_MS = 500;
 constexpr uint32_t NOTICE_MS = 2000;  // "SOUND ON/OFF" banner
 constexpr uint8_t  BRIGHTNESS_AXP = 96;  // AXP192 boards: M5GFX maps this to LDO2 ~2.8 V
-constexpr uint8_t  BRIGHTNESS_PWM = 15;  // PWM backlights (StickS3): M5GFX makes this 60/512 duty,
+constexpr uint8_t  BRIGHTNESS_PWM = 20;  // PWM backlights (StickS3): M5GFX makes this 70/512 duty,
                                          // picked on the device with env s3-brightness
 // Minute-mark glance: backlight steps through these AXP192 LDO2 levels (1.8 V + 0.1 V * level), one
 // per second. Level 7 is the first one visible on the device.
