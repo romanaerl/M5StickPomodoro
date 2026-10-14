@@ -26,9 +26,11 @@ You control it mostly by **how the device is placed**: put it face down to pause
 
 | Button | Press | Hold |
 |---|---|---|
-| **M5** (front, under the screen) | Restart the current mode. Press **again within 5 s** → switch WORK ⇄ BREAK. | — |
+| **M5** (front, under the screen) | Restart the current mode (on release). Press **again within 5 s** → switch WORK ⇄ BREAK. | **2 s**: sound on / off. **5 s**: tap-to-wake in horizontal poses on / off. The screen shows what releasing will do. |
 | **B** (right side) | 1st press only shows the length for a second, then the countdown (the session keeps running). Each next press **+1 min** (1–60), and 1 s after the last press a new session starts with it. | Adds minutes quickly. |
 | **Power** (left side) | Off: switch on. On, screen lit: **sound on / off**. | **1.5 s**: tap-to-wake in horizontal poses on / off. **6 s**: switch off. |
+
+On the **StickS3** the power button belongs to the power chip and the firmware cannot see it: a press switches on or restarts, a **double press switches off**, holding it enters flashing mode. Use the M5 button holds for sound and tap there.
 
 **Poses**
 - **Face down** → pause (screen off, deep sleep).
@@ -52,7 +54,7 @@ You control it mostly by **how the device is placed**: put it face down to pause
 | **M5StickC (original)** | ✅ tested | No buzzer: the red LED blinks instead of beeping, and the power button's short press switches the LED (`LED ON` / `LED OFF`). Smaller 80×160 screen: compact status line; in portrait it shows only the mode and battery (option flags such as `NO LED` / `TAP` appear in landscape). Only units with the MPU6886 IMU (early SH200Q units are not supported). |
 | **M5StickC Plus v1.1** | ✅ tested | Main target; all features as described here. |
 | **M5StickC Plus2** | ⚠️ untested | Prepared from the docs, not yet run on a device. No AXP192: power held by GPIO4, PWM backlight, buzzer without the 5 V boost, power button (C) on GPIO35. Its IMU interrupt is not documented, so orientation is polled once a second (no deep sleep while paused, no tap-to-wake). |
-| **M5StickS3** | ⚠️ untested | Prepared from the docs, not yet run on a device; ESP32-S3, its own build. BMI270 IMU polled (no deep sleep while paused, no tap-to-wake), speaker instead of the buzzer, no RTC documented (time from the less accurate ESP32 clock), and the power button belongs to the power chip (no sound / tap toggles). |
+| **M5StickS3** | 🟡 partly tested | ESP32-S3, its own build. Tested on a device: poses, speaker, taps (the BMI270 reaches the ESP32 through the power chip), M5 button holds for sound and tap. Not yet verified: deep sleep on battery, timing over long sessions (no RTC: time from the less accurate ESP32 clock). The power button belongs to the power chip (double press: off). While on USB it does not sleep, so it can always be flashed. |
 | **M5StickC Plus SE** | ❌ not supported | No motion sensor (IMU). The firmware recognises it and shows "Unsupported device" (E1) instead of running. |
 
 **Flashing — quickest way (no tools to install)**
@@ -122,12 +124,13 @@ Details: [Build and flash](#build-and-flash).
 | **Switch off:** hold the **power** button for **about 6 seconds** | The screen goes dark and the device powers off completely. |
 | Put it **face down** | Pauses. The screen goes dark and the device sleeps deeply. |
 | Turn it **face up** (any visible pose) | Resumes from exactly where it paused. |
-| **M5** button (big, under the screen) | Restarts the current mode. |
+| **M5** button (big, under the screen) | Restarts the current mode (when released). |
 | **M5** again within 5 s (during the yellow / violet grace period) | Switches to the other mode and starts it. |
 | **B** button (right side), single press | Shows the current mode's length (`SET WORK` / `SET BREAK`) for a second, then the countdown for the usual 5 s: the session keeps running. During the finish blinking, the blinking goes on and its 2 minutes are not reset. |
 | **B** further presses / hold | +1 minute per press (wraps 60 → 1); holding repeats quickly. 1 s after the last press the new length is saved and a new session starts. |
 | **Power** button (left side), short press, screen on | Sound on / off (`SOUND ON` / `SOUND OFF`). |
 | **Power** button, hold ~1.5 s, screen on | Tap-to-wake in horizontal poses on / off (`TAP ON` / `TAP OFF`). |
+| **M5** button, hold 2 s / 5 s | The same as the power button's short press / hold: sound / tap-to-wake on / off. While you hold, the banner shows the change; it applies on release. |
 | Tap the table (tap poses) | Shows the full `MM:SS` for 5 s. |
 | Session ends, then move it to another pose for 1 s | Starts the other mode (WORK → BREAK or BREAK → WORK). |
 | Session ends, then face down and back up | Starts the same mode again. |
@@ -231,14 +234,14 @@ A new pose must be stable for a few samples (~0.5 s) before the layout changes. 
 When the screen is dark, a light tap on the table (or any small vibration) shows the full `MM:SS` for 5 seconds.
 
 - **Standing on an end:** always on.
-- **Flat and on both long edges:** off by default. Toggle it by holding the power button for ~1.5 s while the screen is on.
+- **Flat and on both long edges:** off by default. Toggle it by holding the power button for ~1.5 s while the screen is on, or the M5 button for 5 s.
 - In tap poses the accelerometer samples at 100 Hz with a 40 mg threshold to catch light taps. Otherwise it samples at 12.5 Hz with an 80 mg threshold to save power and ignore the desk.
 
 The power button's long press is reported by the power chip at 1.5 s, while you are still holding the button. The `TAP` setting therefore changes at once but is **saved only 6 seconds later**. If you keep holding the button to switch the device off, it powers down before the change is saved, so switching off never changes the setting.
 
 ### Sound
 
-- A **short press** of the power button, while the screen is on, toggles the sound. `MUTE` shows in the status line while the sound is off.
+- A **short press** of the power button, while the screen is on, or **holding the M5 button for 2 s** toggles the sound. `MUTE` shows in the status line while the sound is off.
 - Power-button presses while the screen is dark are ignored, so you cannot change anything by accident in your bag.
 
 ### Battery indicator
@@ -254,8 +257,8 @@ The power button's long press is reported by the power chip at 1.5 s, while you 
 |---|---|---|
 | WORK length | yes | B button in WORK |
 | BREAK length | yes | B button in BREAK |
-| Sound on / off | yes | short press of power button |
-| Tap-to-wake in horizontal poses | yes | long press of power button |
+| Sound on / off | yes | short press of power button, or M5 held 2 s |
+| Tap-to-wake in horizontal poses | yes | long press of power button, or M5 held 5 s |
 | Current session, mode, pause state | across sleep only | — |
 
 Power-on always starts a fresh WORK session. Settings are written to flash only when they change, never to track the countdown.
@@ -343,7 +346,7 @@ The web installer and `scripts/flash.sh` can only see the chip type before flash
 
 **Getting back to flashing mode:**
 - **StickC, StickC Plus, StickC Plus2:** nothing to do. The USB bridge puts the chip into flashing mode by itself; the device only has to be switched on, since the port disappears while it is off.
-- **StickS3:** its USB is inside the chip, so a sleeping or busy firmware can make the port disappear. Connect USB, then press and hold the side reset button until the green LED flashes: that is flashing mode (from the M5Stack docs; untested here).
+- **StickS3:** its USB is inside the chip and stops while the chip sleeps. This firmware does not sleep while USB power is present, so it flashes like the others. For any other firmware: connect USB, then hold the power button until the green LED flashes (flashing mode, tested); press it once afterwards to start the new firmware.
 
 ## Power design and battery life
 

@@ -41,6 +41,8 @@
 #define BREAK_MIN 5     // default BREAK length, minutes
 #endif
 constexpr uint32_t MODE_SWITCH_MS = 5000;  // second button-A press within this switches the mode
+constexpr uint32_t HOLD_SOUND_MS = 2000;   // button A held this long: sound (LED) on/off
+constexpr uint32_t HOLD_TAP_MS = 5000;     // held this long: tap-to-wake on/off
 constexpr int32_t  GRACE_MS = 5000;        // shown in yellow before the session proper starts
 constexpr uint32_t POSE_SWITCH_MS = 1000;  // FINISHED: a new pose held this long starts the other mode
 constexpr uint32_t SET_TIMEOUT_MS = 1000;
@@ -137,11 +139,23 @@ static bool btnDown(gpio_num_t pin) { return digitalRead(pin) == LOW; }
 // (found on the device: the port only appeared after deep sleep released the pins). So TX is
 // connected only while USB power is present; logs flow as usual whenever a computer is attached.
 static bool txAttached = true;
+// Waits for the log to go out before a sleep. On the ESP32-S3 the log goes over the chip's own USB
+// (HWCDC), whose flush() never returns while no computer reads it: on battery it froze the StickS3 at
+// its first sleep. There it flushes only while USB power is present and a computer has read the log
+// (a charger never reads it; after unplugging, VBUS is gone).
+static void flushLog() {
+#if CONFIG_IDF_TARGET_ESP32S3
+  if (Serial && M5.Power.getVBUSVoltage() > 4000) Serial.flush();
+#else
+  Serial.flush();
+#endif
+}
+
 static void serialFollowUsb() {
   if (!axp()) return;  // needs the AXP192 to see USB power; other boards keep TX attached
   const bool usb = axpUsbPower();
   if (usb == txAttached) return;
-  Serial.flush();
+  flushLog();
   if (usb) uart_set_pin(UART_NUM_0, 1, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
   else pinMode(1, INPUT);
   txAttached = usb;
@@ -149,13 +163,37 @@ static void serialFollowUsb() {
 static void wr(uint8_t addr, uint8_t reg, uint8_t v) { M5.In_I2C.writeRegister8(addr, reg, v, I2C_HZ); }
 static uint8_t rd(uint8_t addr, uint8_t reg) { return M5.In_I2C.readRegister8(addr, reg, I2C_HZ); }
 
+// ESP32-S3 (StickS3) with USB power present (the M5PM1 measures VBUS).
+static bool s3OnUsb() {
+#if CONFIG_IDF_TARGET_ESP32S3
+  return prof().power == Power::M5PM1 && M5.Power.getVBUSVoltage() > 4000;
+#else
+  return false;
+#endif
+}
+
 // Light sleep. wakeOnIo: buttons wake it; imuWake: the IMU INT line too (off while already polling
 // after motion, otherwise a re-latching INT turns the sleep into a busy loop).
 static void nap(uint32_t ms, bool wakeOnIo, bool imuWake = true) {
   imuWake = imuWake && wakeOnIo && womOk && prof().intPin >= 0;
   // A power key on a GPIO wakes it too, unless it is held (a held level would wake it at once).
   const bool keyWake = wakeOnIo && prof().keyPin >= 0 && digitalRead(prof().keyPin) == HIGH;
-  Serial.flush();
+  // A PWM backlight (boards without the AXP192) goes dark in light sleep, which made the screen flicker
+  // (StickS3): while it is lit, wait awake instead, still returning early on a button press. The same on
+  // the ESP32-S3 while USB is connected: its USB is inside the chip and stops answering in light sleep,
+  // which would make flashing need the manual download mode.
+  if ((!axp() && M5.Display.getBrightness() > 0) || s3OnUsb()) {
+    const uint32_t t0 = millis();
+    while (millis() - t0 < ms) {
+      if (wakeOnIo && (digitalRead(PIN_BTN_A()) == LOW || digitalRead(PIN_BTN_B()) == LOW ||
+                       (keyWake && digitalRead(prof().keyPin) == LOW) ||
+                       (imuWake && digitalRead(PIN_INT()) == LOW)))
+        return;
+      delay(10);
+    }
+    return;
+  }
+  flushLog();
   esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
   esp_sleep_enable_timer_wakeup((uint64_t)ms * 1000);
   if (wakeOnIo) {
@@ -222,9 +260,29 @@ static void rtcInit() {
 // ---------- MPU6886 ----------
 struct Accel { float x, y, z; };
 
+// StickS3: BMI270 (I2C 0x69) whose INT1 goes to the M5PM1's G4; the PMIC raises its IRQ output G1,
+// wired to the ESP32-S3's GPIO13. That is the "INT pin" of this board: wake-on-motion and taps work
+// as with the MPU6886's INT on GPIO35. Register details from the M5PM1 library and the BMI270 datasheet.
+constexpr uint8_t PM1 = 0x6E;
+constexpr uint32_t PM1_HZ = 100000;
+static bool pm1Imu() { return prof().power == Power::M5PM1 && prof().intPin >= 0; }
+RTC_DATA_ATTR uint8_t bmiAddr;  // BMI270 I2C address: 0x68 or 0x69 (SDO), found once, kept in deep sleep
+static uint8_t bmi() {
+  if (!bmiAddr)
+    for (uint8_t a : {0x68, 0x69})
+      if (M5.In_I2C.readRegister8(a, 0x00, I2C_HZ) == 0x24) { bmiAddr = a; break; }  // CHIP_ID
+  return bmiAddr ? bmiAddr : 0x68;
+}
+
 static Accel readAccel() {
   float raw[3];
-  if (prof().imu == Imu::M5UNIFIED) {
+  if (pm1Imu()) {  // read directly: works before M5.begin() (motion wake fast path)
+    uint8_t b[6];
+    M5.In_I2C.readRegister(bmi(), 0x0C, b, 6, I2C_HZ);
+    float r[3];
+    for (int i = 0; i < 3; i++) r[i] = (int16_t)(b[2 * i] | b[2 * i + 1] << 8) * (8.0f / 32768.0f);  // +-8 g
+    raw[0] = r[1]; raw[1] = -r[0]; raw[2] = r[2];  // the same axes as M5Unified gives (X=+Y, Y=-X, Z=+Z)
+  } else if (prof().imu == Imu::M5UNIFIED) {
     M5.Imu.update();
     auto d = M5.Imu.getImuData();
     raw[0] = d.accel.x; raw[1] = d.accel.y; raw[2] = d.accel.z;
@@ -248,7 +306,57 @@ static int layoutOf(const Accel& a) {
   return -1;
 }
 
-static bool imuMotion() { return mpu() && (rd(MPU, 0x3A) & 0xE0); }  // reading INT_STATUS releases INT
+static bool imuMotion() {  // a motion event since the last call; clears it, releasing the INT line
+  if (pm1Imu()) {
+    const uint8_t st = M5.In_I2C.readRegister8(PM1, 0x40, PM1_HZ);  // IRQ_STATUS1: GPIO events
+    if (!st) return false;
+    M5.In_I2C.writeRegister8(PM1, 0x40, 0x00, PM1_HZ);              // write 0 clears
+    return st & 0x10;                                               // G4 = BMI270 INT1
+  }
+  return mpu() && (rd(MPU, 0x3A) & 0xE0);  // reading INT_STATUS releases INT
+}
+
+// BMI270 any-motion (feature page 1, bytes 12..15 of 0x30..0x3F): fires when any axis changes by more
+// than thrMg within durSamples x 20 ms. Used like the MPU6886's wake-on-motion threshold.
+static void bmiAnyMotion(uint16_t thrMg, uint16_t durSamples) {
+  uint8_t f[16];
+  M5.In_I2C.writeRegister8(bmi(), 0x2F, 1, I2C_HZ);
+  M5.In_I2C.readRegister(bmi(), 0x30, f, 16, I2C_HZ);
+  const uint16_t w1 = (durSamples & 0x1FFF) | (7u << 13);  // duration, x/y/z selected
+  const uint16_t thr = (uint32_t)thrMg * 2048 / 1000;     // 0.488 mg per step
+  const uint16_t w2 = ((f[14] | f[15] << 8) & 0x7800) | (thr & 0x7FF) | 0x8000;  // threshold, enabled
+  f[12] = w1 & 0xFF; f[13] = w1 >> 8; f[14] = w2 & 0xFF; f[15] = w2 >> 8;
+  M5.In_I2C.writeRegister(bmi(), 0x30, f, 16, I2C_HZ);
+  M5.In_I2C.writeRegister8(bmi(), 0x2F, 0, I2C_HZ);
+}
+
+// StickS3, every boot after M5.begin() (which resets the BMI270): any-motion on INT1 only, INT1 as an
+// active-low push-pull output; the M5PM1 reports G4 edges on its IRQ output G1.
+static void pm1ImuInit() {
+  M5.In_I2C.writeRegister8(bmi(), 0x58, 0x00, I2C_HZ);  // INT_MAP_DATA: M5Unified maps all data IRQs
+  M5.In_I2C.writeRegister8(bmi(), 0x53, 0x08, I2C_HZ);  // INT1_IO_CTRL: output, push-pull, active low
+  M5.In_I2C.writeRegister8(bmi(), 0x55, 0x00, I2C_HZ);  // INT_LATCH: pulses (the PMIC latches)
+  M5.In_I2C.writeRegister8(bmi(), 0x56, 0x40, I2C_HZ);  // INT1_MAP_FEAT: any-motion
+  M5.In_I2C.writeRegister8(bmi(), 0x7D, 0x04, I2C_HZ);  // PWR_CTRL: accelerometer only (gyro off)
+  bmiAnyMotion(80, 2);
+  auto bits = [](uint8_t reg, uint8_t mask, uint8_t val) {
+    for (int i = 0; i < 5; i++) {
+      const uint8_t v = M5.In_I2C.readRegister8(PM1, reg, PM1_HZ);
+      if ((v & mask) == val) return;
+      M5.In_I2C.writeRegister8(PM1, reg, (v & ~mask) | val, PM1_HZ);
+    }
+  };
+  bits(0x17, 0x03, 0x00);  // G4: GPIO function
+  bits(0x10, 0x10, 0x00);  //     input
+  bits(0x15, 0x03, 0x01);  //     pull-up
+  bits(0x16, 0x0C, 0x04);  // G1: IRQ output function
+  bits(0x10, 0x02, 0x02);  //     output
+  bits(0x13, 0x02, 0x00);  //     push-pull
+  bits(0x43, 0x1F, 0x0F);  // IRQ masks: G4 only; no system or button IRQs
+  bits(0x44, 0x3F, 0x3F);
+  bits(0x45, 0x07, 0x07);
+  for (uint8_t reg = 0x40; reg <= 0x42; reg++) M5.In_I2C.writeRegister8(PM1, reg, 0x00, PM1_HZ);
+}
 
 // Accel-only low-power cycle mode (12.5 Hz) with wake-on-motion on the INT pin.
 static void imuInit() {
@@ -269,6 +377,9 @@ static void imuInit() {
 }
 
 static void imuTapSensitive(bool on) {
+  // StickS3: any-motion samples at 50 Hz and smooths a tap more than the MPU6886 at 100 Hz, so its
+  // tap threshold is lower (40 and 20 mg were felt as less sensitive than the other models).
+  if (pm1Imu()) { bmiAnyMotion(on ? 10 : 80, on ? 1 : 2); return; }
   if (!mpu()) return;
   uint8_t th = on ? WOM_THRESHOLD_TAP : WOM_THRESHOLD;
   wr(MPU, 0x19, on ? ODR_DIV_TAP : ODR_DIV);
@@ -277,6 +388,24 @@ static void imuTapSensitive(bool on) {
 
 // Verify the INT -> GPIO35 path using the data-ready interrupt (no physical motion needed).
 static bool imuSelfTest() {
+  if (pm1Imu()) {  // the same check through the PMIC: BMI270 data-ready -> G4 -> IRQ -> GPIO13
+    pinMode(PIN_INT(), INPUT);
+    imuMotion();
+    M5.In_I2C.writeRegister8(bmi(), 0x58, 0x04, I2C_HZ);  // accel data ready -> INT1
+    bool low = false;
+    for (int i = 0; i < 50 && !low; i++) { delay(10); low = digitalRead(PIN_INT()) == LOW; }
+    M5.In_I2C.writeRegister8(bmi(), 0x58, 0x00, I2C_HZ);
+    delay(30);
+    M5.In_I2C.writeRegister8(PM1, 0x40, 0x00, PM1_HZ);
+    delay(5);
+    const bool released = digitalRead(PIN_INT()) == HIGH;
+    M5.Imu.update();
+    const auto d = M5.Imu.getImuData();
+    const Accel a = readAccel();
+    Serial.printf("IMU INT self-test (via PMIC): asserted=%d released=%d; accel raw %.2f,%.2f,%.2f m5 %.2f,%.2f,%.2f\n",
+                  low, released, a.x, a.y, a.z, d.accel.x, d.accel.y, d.accel.z);
+    return low && released;
+  }
   if (!mpu() || prof().intPin < 0) {
     Serial.println("IMU INT: not wired to the ESP32, orientation is polled");
     return false;
@@ -692,7 +821,7 @@ static void resume(uint32_t since) {
   esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
   if (womOk) esp_sleep_enable_ext0_wakeup(PIN_INT(), 0);
   if (state == FINISHED) esp_sleep_enable_ext1_wakeup(1ULL << PIN_BTN_A(), ESP_EXT1_WAKEUP_ALL_LOW);
-  Serial.flush();
+  flushLog();
   esp_deep_sleep_start();
 }
 
@@ -701,6 +830,26 @@ static void pause(uint32_t since) {
   state = PAUSED;
   screenSleep();
   Serial.printf("PAUSED: %ld ms left\n", (long)pausedRemMs);
+}
+
+// StickS3 speaker amplifier enable: M5PM1 G3 as a push-pull output, high = on. Each register is
+// written and read back, up to 5 tries (100 kHz, as M5Unified talks to this PMIC).
+static bool pm1Bits(bool on) {
+  constexpr uint8_t PM1 = 0x6E, G3 = 1 << 3;
+  struct { uint8_t reg; bool set; } steps[] = {{0x16, false}, {0x10, true}, {0x13, false}, {0x11, on}};
+  bool ok = true;
+  for (auto& st : steps) {
+    bool done = false;
+    for (int i = 0; i < 5 && !done; i++) {
+      if (st.set) M5.In_I2C.bitOn(PM1, st.reg, G3, 100000);
+      else M5.In_I2C.bitOff(PM1, st.reg, G3, 100000);
+      const uint8_t v = M5.In_I2C.readRegister8(PM1, st.reg, 100000);
+      done = ((v & G3) != 0) == st.set;
+      if (!done) delay(2);
+    }
+    ok = ok && done;
+  }
+  return ok;
 }
 
 // The buzzer is powered from the AXP192 5 V boost (EXTEN), so it is enabled only while beeping.
@@ -717,14 +866,24 @@ static void beep(int n, int onMs, int offMs) {
     return;
   }
   if (prof().sound == Sound::SPEAKER) {  // codec + speaker (StickS3), started only for the beep
-    M5.Speaker.begin();
-    M5.Speaker.setVolume(160);
+    if (!M5.Speaker.begin()) Serial.println("speaker: begin failed");
+    // The amplifier is switched by the M5PM1's G3. M5Unified sets it with single writes, which the PMIC
+    // sometimes misses (its I2C answers late after idling): the beep then was only a click. Set it here,
+    // read back, retried.
+    if (!pm1Bits(true)) Serial.println("speaker: amplifier enable failed");
+    M5.Speaker.setVolume(90);  // quieter than the buzzer boards' piezo would allow; 255 = max
+    delay(40);  // codec and amplifier settle; a tone at once was sometimes lost
+    // The speaker clips the start of a tone, so the shortest signals (the 80 ms BREAK start) sounded
+    // cut off: here they last at least 140 ms, still clearly shorter than the 250 ms WORK start.
+    onMs = std::max(onMs, 140);
     for (int i = 0; i < n; i++) {
       M5.Speaker.tone(4000, onMs);
       delay(onMs + (i + 1 < n ? offMs : 0));
     }
     while (M5.Speaker.isPlaying()) delay(5);
+    delay(20);
     M5.Speaker.end();
+    pm1Bits(false);
     return;
   }
   const bool exten = prof().sound == Sound::BUZZER_EXTEN;
@@ -787,9 +946,19 @@ static Check identify(bool boardKnown) {
     return {"E1", "No motion sensor (IMU)", like};
   }
   imuInit();
-  const Accel a = readAccel();
-  const float g = sqrtf(a.x * a.x + a.y * a.y + a.z * a.z);
-  if (g < 0.6f || g > 1.4f) return {"E2", "Motion sensor reading is implausible", nullptr};
+  // Give the sensor up to ~1 s for its first sample: right after M5.begin() the BMI270 (StickS3) has
+  // no data yet and reads 0 g.
+  Accel a = readAccel();
+  float g = sqrtf(a.x * a.x + a.y * a.y + a.z * a.z);
+  for (int i = 0; i < 50 && (g < 0.6f || g > 1.4f); i++) {
+    delay(20);
+    a = readAccel();
+    g = sqrtf(a.x * a.x + a.y * a.y + a.z * a.z);
+  }
+  if (g < 0.6f || g > 1.4f) {
+    Serial.printf("IMU reading: %.2f,%.2f,%.2f (%.2f g)\n", a.x, a.y, a.z, g);
+    return {"E2", "Motion sensor reading is implausible", nullptr};
+  }
   if (p.clock == Clock::BM8563) {
     if (!M5.In_I2C.scanID(RTC_ADDR)) return {"E5", "Clock chip (RTC) missing", nullptr};
     rtcInit();
@@ -809,6 +978,16 @@ static Check identify(bool boardKnown) {
 // recognised board, whose buzzer / LED pins are known: nothing is driven on an unknown board), logs
 // "UNSUPPORTED: ...". It never powers off or deep-sleeps while it may be on USB, so the port stays
 // there for flashing something else; on battery (AXP192 boards) it powers off after 2 minutes.
+// Refusal screen idle: light sleep, except on the ESP32-S3, whose USB is inside the chip and stops
+// answering in light sleep, so the port could not be used to flash something else.
+static void refuseWait(uint32_t ms) {
+#if CONFIG_IDF_TARGET_ESP32S3
+  delay(ms);
+#else
+  nap(ms, false);  // timer-only light sleep: no pins are armed
+#endif
+}
+
 [[noreturn]] static void refuse(const Check& c, bool boardKnown) {
   Serial.printf("UNSUPPORTED: %s %s%s%s\n", c.code, c.why, c.looksLike ? " - looks like " : "",
                 c.looksLike ? c.looksLike : "");
@@ -871,9 +1050,9 @@ static Check identify(bool boardKnown) {
       lit = display;
       shownAt = lastBeep = millis();
       beep(5, 120, 120);
-      while (btnDown(PIN_BTN_A())) nap(20, false);
+      while (btnDown(PIN_BTN_A())) refuseWait(20);
     }
-    nap(200, false);  // timer-only light sleep: no pins are armed
+    refuseWait(200);
   }
 }
 
@@ -906,6 +1085,9 @@ void setup() {
     delay(5);
   }
   Serial.begin(115200);
+#if CONFIG_IDF_TARGET_ESP32S3
+  Serial.setTxTimeoutMs(0);  // no computer reading the USB log: drop it rather than wait
+#endif
 
   auto cfg = M5.config();
   cfg.output_power = false;  // 5 V boost (EXTEN) off
@@ -933,6 +1115,7 @@ void setup() {
     if (c.code) refuse(c, found >= 0);
   }
   if (prof().power == Power::HOLD_GPIO4) gpio_hold_dis(GPIO_NUM_4);  // M5.begin() drives it HIGH again
+  if (pm1Imu()) pm1ImuInit();
   serialFollowUsb();
   M5.Display.setBrightness(0);
   pinMode(PIN_BTN_A(), INPUT);
@@ -1015,9 +1198,36 @@ static bool handleButtons(int remS) {
     render(remS);
   }
   if (digitalRead(PIN_BTN_A()) == LOW) {
+    // M5 button, decided on release: a press restarts (a second one within 5 s switches the mode), held
+    // 2 s switches the sound, held 5 s tap-to-wake. Works on every board; on the StickS3 it is the only
+    // way, since its power button belongs to the PMIC. While held, the screen previews the change.
+    const uint32_t t0 = millis();
+    bool hintSound = false, hintTap = false;
+    while (digitalRead(PIN_BTN_A()) == LOW) {
+      const uint32_t held = millis() - t0;
+      if (!hintSound && held >= HOLD_SOUND_MS) {
+        hintSound = true;
+        if (hasBuzzer()) notice(soundOn ? "SOUND OFF" : "SOUND ON", !soundOn);
+        else notice(soundOn ? "LED OFF" : "LED ON", !soundOn);
+        screenWake(remS);
+        render(remS);
+      }
+      if (!hintTap && held >= HOLD_TAP_MS) {
+        hintTap = true;
+        notice(tapFlat ? "TAP OFF" : "TAP ON", !tapFlat);
+        render(remS);
+      }
+      nap(20, false);
+    }
+    const uint32_t held = millis() - t0;
+    if (held >= HOLD_SOUND_MS) {
+      applyPowerKey(held >= HOLD_TAP_MS ? KEY_LONG : KEY_SHORT);
+      screenWake(remS);
+      render(remS);
+      return true;
+    }
     if (millis() - lastPressAt < MODE_SWITCH_MS) mode ^= 1;  // second press during the grace period
     startSession();
-    while (digitalRead(PIN_BTN_A()) == LOW) nap(20, false);
     lastPressAt = millis();
     return true;
   }
@@ -1091,8 +1301,28 @@ static void runStep() {
 }
 
 // FINISHED with the screen on (blinking): buttons and layout still work; face down or timeout -> deep sleep.
+// Deep sleep needs wake-on-motion; on the ESP32-S3 it would also drop the USB port, so not while on USB.
+static bool canDeepSleep() { return womOk && !s3OnUsb(); }
+
+// FINISHED, screen off, without deep sleep (no wake-on-motion, or a StickS3 on USB): deep sleep could only wake on the
+// M5 button, so the pose is polled instead, once a second: face down and back up, or the M5 button,
+// starts the same mode again, as a motion wake from deep sleep does on the other boards.
+static void finishedIdleStep() {
+  if (btnDown(PIN_BTN_A())) {
+    startSession();
+    lastPressAt = millis();  // a second press switches the mode
+    return;
+  }
+  uint32_t since;
+  const int pose = confirmPose(&since);
+  if (pose == -1) finishedDown = true;
+  else if (pose == 1 && finishedDown) { startSession(); return; }
+  nap(1000, true, false);
+}
+
 static void finishedStep() {
   if (!screenOn) {
+    if (!canDeepSleep()) { finishedIdleStep(); return; }
     finishedDown = readAccel().z < DOWN_G;
     deepSleep();
   }
@@ -1103,7 +1333,8 @@ static void finishedStep() {
   if (a.z < DOWN_G && ++downCount >= CONFIRM_SAMPLES) {
     screenSleep();
     finishedDown = true;
-    deepSleep();
+    if (canDeepSleep()) deepSleep();
+    return;
   }
   if (a.z >= DOWN_G) downCount = 0;
   int l = layoutOf(a);  // a new pose held for POSE_SWITCH_MS starts the other mode
@@ -1130,7 +1361,7 @@ static void finishedStep() {
 static void pausedStep() {
   uint32_t since;
   if (confirmPose(&since) == 1) { resume(since); return; }
-  if (womOk) deepSleep();
+  if (canDeepSleep()) deepSleep();
   nap(1000, false);
 }
 

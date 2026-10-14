@@ -109,29 +109,25 @@ accelerometer axes and display rotations (measured on the device). Its profile d
 
 ## M5StickS3
 
-**Prepared, untested.** ESP32-S3, so it has its own build of the same code (PlatformIO env `m5stick-s3`;
-`scripts/flash.sh` picks it from the chip, and the web installer from the chip family). Sources: the M5Stack
-docs and the M5Unified board code (M5Unified already supports the board).
+**Partly tested** on a device (2026-10-14). ESP32-S3, so it has its own build of the same code (PlatformIO
+env `m5stick-s3`; `scripts/flash.sh` picks it from the chip, and the web installer from the chip family).
 
 | | M5StickS3 | How the firmware handles it |
 |---|---|---|
-| Chip | ESP32-S3-PICO-1-N8R8, 8 MB flash, native USB | Env `m5stick-s3` (USB CDC on boot) |
-| Power | M5PM1 PMIC (I2C 0x6E); its button powers on / resets / powers off by itself | `Power::M5PM1`: no power-key functions, so no sound or TAP toggles |
-| Backlight | PWM on GPIO38 | `M5.Display.setBrightness()` |
-| Sound | ES8311 codec + speaker, amplifier switched by the PMIC | `Sound::SPEAKER`: `M5.Speaker`, started only for a beep |
+| Chip | ESP32-S3-PICO-1-N8R8, 8 MB flash, native USB | Env `m5stick-s3` (USB CDC on boot). The log's `flush()` never returns without a computer reading it, so it is skipped then (it froze the device on battery). |
+| Power | M5PM1 PMIC (I2C 0x6E); its button powers on / resets, double press powers off, hold = flashing mode | `Power::M5PM1`: the firmware never sees that button; the M5 button holds (2 s sound, 5 s tap) replace it |
+| USB | Inside the chip: stops in light and deep sleep | No sleep while the PMIC measures VBUS, so the port always answers |
+| Backlight | PWM on GPIO38: dark during light sleep | No light sleep while the backlight is lit (it flickered) |
+| Sound | ES8311 codec + speaker; amplifier on PMIC G3 | `Sound::SPEAKER`, started for each beep; G3 is set and read back with retries (single writes were sometimes missed: a click, no tone). Volume 90/255, beeps at least 140 ms. |
 | Buttons | GPIO11 (front), GPIO12 (side) | From the profile |
-| IMU | BMI270; its interrupt goes to the PMIC | `Imu::M5UNIFIED`: polled through `M5.Imu` (axes already remapped by M5Unified) |
-| RTC | Not documented | `Clock::SYSTEM`: ESP32 time, less accurate across sleep |
+| IMU | BMI270 at 0x68; INT1 to PMIC G4; the PMIC's IRQ output G1 goes to GPIO13 | Read directly (works before `M5.begin()` after a wake). Any-motion feature on INT1 (80 mg; taps 10 mg), PMIC IRQ on G4 only; GPIO13 is the wake-on-motion line, so deep sleep and taps work as on the Plus. Self-test: data-ready through the same path. |
+| RTC | None found | `Clock::SYSTEM`: ESP32 time, less accurate across sleep |
 | Internal I2C | SDA 47 / SCL 48 | From the profile |
 
-**Check first on a real device:**
+**Still to check on a device:**
 
-1. The boot log (USB CDC) shows `profile=M5StickS3`. The display works and every pose shows an upright image;
-   fix `rotation` and the axes (step 0).
-2. Beeps come from the speaker.
-3. Timing over a full session, since there is no RTC. If it drifts, look for an RTC on the board or in the M5PM1.
-4. A finished session deep-sleeps and wakes on the front button.
-5. Light sleep may drop the USB CDC connection, so logs can stop between events.
+1. On battery: face down deep-sleeps and lifting it resumes; after a finished session, face down and back up starts again.
+2. Timing over a full session, since there is no RTC.
 
 ## Verifying a port
 
