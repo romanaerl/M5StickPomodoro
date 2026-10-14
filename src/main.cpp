@@ -51,11 +51,16 @@ constexpr uint32_t FINISHED_SCREEN_MS = 2 * 60 * 1000;  // blinking, unless turn
 constexpr uint32_t BLINK_MS = 500;
 constexpr uint32_t NOTICE_MS = 2000;  // "SOUND ON/OFF" banner
 constexpr uint8_t  BRIGHTNESS_AXP = 96;  // AXP192 boards: M5GFX maps this to LDO2 ~2.8 V
-constexpr uint8_t  BRIGHTNESS_PWM = 48;  // PWM backlights (StickS3) are brighter at the same value
+constexpr uint8_t  BRIGHTNESS_PWM = 8;   // PWM backlights (StickS3): M5GFX makes this ~47/512 duty,
+                                         // picked on the device with env s3-brightness (48/512)
 // Minute-mark glance: backlight steps through these AXP192 LDO2 levels (1.8 V + 0.1 V * level), one
 // per second. Level 7 is the first one visible on the device.
 constexpr uint8_t  GLANCE_LEVELS[] = {7, 8, 8, 8, 7};
 constexpr uint32_t GLANCE_STEP_MS  = 1000;
+// PWM backlights: the glance fades smoothly to this raw 9-bit duty (picked on a StickS3: half of
+// setBrightness(1), which M5GFX makes 34/512) on M5GFX's backlight LEDC channel.
+constexpr uint32_t GLANCE_PWM_PEAK = 17;
+constexpr uint8_t  M5GFX_BACKLIGHT_CH = 7;
 
 constexpr uint8_t  MPU = 0x68, RTC_ADDR = 0x51, AXP = 0x34;
 constexpr uint32_t I2C_HZ = 400000;
@@ -1118,6 +1123,33 @@ void setup() {
   }
   if (prof().power == Power::HOLD_GPIO4) gpio_hold_dis(GPIO_NUM_4);  // M5.begin() drives it HIGH again
   if (pm1Imu()) pm1ImuInit();
+#ifdef BRIGHTNESS_SWEEP  // env s3-brightness: steps the normal-screen backlight, 3 s per raw duty value
+  if (!axp()) {
+    static const uint16_t duties[] = {17, 24, 34, 48, 64, 80, 96, 122, 160};  // of 512; 122 = setBrightness(48)
+    auto& d = M5.Display;
+    d.wakeup();
+    d.setRotation(1);
+    for (;;) {
+      for (uint16_t duty : duties) {
+        d.fillScreen(TFT_BLACK);
+        d.drawRoundRect(3, 3, d.width() - 6, d.height() - 24, 8, TFT_WHITE);
+        d.fillRect(8, 8 + (d.height() - 34) / 4, d.width() - 16, (d.height() - 34) * 3 / 4, TFT_GREEN);
+        d.setTextDatum(middle_center);
+        d.setFont(&fonts::FreeSansBold24pt7b);
+        d.setTextColor(TFT_WHITE);
+        d.drawString("18:42", d.width() / 2, (d.height() - 21) / 2);
+        d.setFont(&fonts::Font2);
+        d.setTextColor(TFT_LIGHTGREY);
+        char buf[24];
+        snprintf(buf, sizeof buf, "%u / 512", duty);
+        d.drawString(buf, d.width() / 2, d.height() - 10);
+        ledcWrite(7, duty);
+        Serial.printf("backlight duty %u/512\n", duty);
+        delay(3000);
+      }
+    }
+  }
+#endif
   serialFollowUsb();
   M5.Display.setBrightness(0);
   pinMode(PIN_BTN_A(), INPUT);
@@ -1171,6 +1203,19 @@ static void glance(int remS) {
   Serial.printf("glance: %d min\n", (remS + 59) / 60);
   uint8_t key = KEY_NONE;
   bool stop = false;
+  if (!axp()) {  // PWM backlight (StickS3): a smooth fade, written to the LEDC channel directly, since
+                 // setBrightness(1) is already 34/512: 2 s up to GLANCE_PWM_PEAK, 1 s there, 2 s down
+    constexpr uint32_t UP_MS = 2000, HOLD_MS = 1000, TICK_MS = 20;
+    for (uint32_t t = 0; t <= 2 * UP_MS + HOLD_MS && !stop; t += TICK_MS) {
+      const uint32_t ramp = t < UP_MS ? t : t < UP_MS + HOLD_MS ? UP_MS : 2 * UP_MS + HOLD_MS - t;
+      ledcWrite(M5GFX_BACKLIGHT_CH, GLANCE_PWM_PEAK * ramp / UP_MS);
+      delay(TICK_MS);  // awake: light sleep would stop the PWM
+      if (t % 200 == 0) {
+        key = powerKey();
+        stop = key || digitalRead(PIN_BTN_A()) == LOW || digitalRead(PIN_BTN_B()) == LOW || readAccel().z < DOWN_G;
+      }
+    }
+  } else
   for (uint8_t level : GLANCE_LEVELS) {
     backlightLevel(level);
     for (int i = 0; i < 5 && !stop; i++) {  // poll every 200 ms
