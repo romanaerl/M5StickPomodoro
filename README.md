@@ -26,7 +26,7 @@ You control it mostly by **how the device is placed**: put it face down to pause
 
 | Button | Press | Hold |
 |---|---|---|
-| **M5** (front, under the screen) | Restart the current mode (on release). Press **again within 5 s** → switch WORK ⇄ BREAK. | **1.5 s**: sound on / off. **3 s**: tap-to-wake in horizontal poses on / off. The screen shows what releasing will do. |
+| **M5** (front, under the screen) | Screen dark: **show the time** (like a pose change). Screen on: restart the current mode (on release); press **again within 5 s** → switch WORK ⇄ BREAK. While `00:00` blinks: start the **other** mode. | **1.5 s**: sound on / off. **3 s**: tap-to-wake in horizontal poses on / off. The screen shows what releasing will do. |
 | **B** (right side) | 1st press only shows the length for a second, then the countdown (the session keeps running). Each next press **+1 min** (1–60), and 1 s after the last press a new session starts with it. | Adds minutes quickly. |
 | **Power** (left side) | Off: switch on. On, screen lit: **sound on / off**. | **1.5 s**: tap-to-wake in horizontal poses on / off. **6 s**: switch off. |
 
@@ -124,7 +124,9 @@ Details: [Build and flash](#build-and-flash).
 | **Switch off:** hold the **power** button for **about 6 seconds** | The screen goes dark and the device powers off completely. |
 | Put it **face down** | Pauses. The screen goes dark and the device sleeps deeply. |
 | Turn it **face up** (any visible pose) | Resumes from exactly where it paused. |
-| **M5** button (big, under the screen) | Restarts the current mode (when released). |
+| **M5** button (big, under the screen), screen dark | Shows the time for 5 s, like a change of pose. |
+| **M5** button, screen on | Restarts the current mode (when released). |
+| **M5** button while `00:00` blinks | Starts the other mode (WORK → BREAK or BREAK → WORK). |
 | **M5** again within 5 s (during the yellow / violet grace period) | Switches to the other mode and starts it. |
 | **B** button (right side), single press | Shows the current mode's length (`SET WORK` / `SET BREAK`) for a second, then the countdown for the usual 5 s: the session keeps running. During the finish blinking, the blinking goes on and its 2 minutes are not reset. |
 | **B** further presses / hold | +1 minute per press (wraps 60 → 1); holding repeats quickly. 1 s after the last press the new length is saved and a new session starts. |

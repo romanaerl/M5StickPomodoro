@@ -1245,10 +1245,12 @@ static bool handleButtons(int remS) {
     render(remS);
   }
   if (digitalRead(PIN_BTN_A()) == LOW) {
-    // M5 button, decided on release: a press restarts (a second one within 5 s switches the mode), held
+    // M5 button, decided on release: a press restarts (a second one within 5 s switches the mode); with
+    // the screen dark it only shows the time, and while FINISHED blinks it starts the other mode. Held
     // 1.5 s switches the sound, held 3 s tap-to-wake. Works on every board; on the StickS3 it is the only
     // way, since its power button belongs to the PMIC. While held, the screen previews the change.
     const uint32_t t0 = millis();
+    const bool wasLit = screenOn;
     bool hintSound = false, hintTap = false;
     while (digitalRead(PIN_BTN_A()) == LOW) {
       const uint32_t held = millis() - t0;
@@ -1269,6 +1271,17 @@ static bool handleButtons(int remS) {
     const uint32_t held = millis() - t0;
     if (held >= HOLD_SOUND_MS) {
       applyPowerKey(held >= HOLD_TAP_MS ? KEY_LONG : KEY_SHORT);
+      screenWake(remS);
+      render(remS);
+      return true;
+    }
+    if (state == FINISHED) {  // while 00:00 blinks: the other mode, like turning it to another pose
+      mode ^= 1;
+      startSession();
+      lastPressAt = millis();
+      return true;
+    }
+    if (!wasLit) {  // screen dark: a press only shows the time, like a change of pose
       screenWake(remS);
       render(remS);
       return true;

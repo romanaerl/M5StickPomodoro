@@ -283,7 +283,7 @@ __DOCS__
       } else {
         text = "00:00"; frac = 0; color = "#1e1e1e"; status = "FINISHED"; sc = "#ff3030";
         lit = Math.floor(t / 500) % 2 === 0;
-        msg = "Finished: rotate it for " + (mode === "WORK" ? "BREAK" : "WORK") + ", or face down and up for " + mode;
+        msg = "Finished: rotate it or press M5 for " + (mode === "WORK" ? "BREAK" : "WORK") + ", face down and up for " + mode;
       }
       if (down) msg = "Face down: paused";
       var W = tall ? 135 : 240, H = tall ? 240 : 135;
@@ -328,7 +328,10 @@ __DOCS__
     var pending;  // a click waits briefly for a second one: double click = the other mode
     function press() {
       if (pending) { clearTimeout(pending); pending = null; restart(true); return; }
-      pending = setTimeout(function () { pending = null; restart(false); }, 300);
+      pending = setTimeout(function () {  // while FINISHED blinks a click starts the other mode, as on the device
+        pending = null;
+        restart(!paused && graceUntil <= now() && endAt <= now());
+      }, 300);
     }
     m5.addEventListener("click", press);
     m5.addEventListener("dblclick", function (e) { e.preventDefault(); });
