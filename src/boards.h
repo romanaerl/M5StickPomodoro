@@ -87,11 +87,10 @@ const BoardProfile PROFILES[] = {
   {m5::board_t::board_M5StickCPlus2, "M5StickC Plus2", false, false, false, P::HOLD_GPIO4, I::MPU6886,   S::BUZZER,       C::BM8563,
    2, 19, false, 37, 39, -1, 35, 21, 22, 0,    240, 135, m5::imu_t::imu_mpu6886, false,
    {1, 3, 2, 0, 1}, {0, 1, 2}, {1, 1, 1}},
-  // Partly tested on a device (2026-10-14): ESP32-S3, M5PM1 PMIC (its button powers on / resets / powers
-  // off by itself), BMI270 IMU whose INT1 goes to the PMIC, which signals it on GPIO13 (see pm1ImuInit()
-  // in main.cpp), ES8311 codec + speaker (amplifier on PMIC G3), buttons on GPIO11/12, no RTC. Poses, the
-  // speaker, taps and the M5 button work; deep sleep on battery is not verified yet.
-  {m5::board_t::board_M5StickS3,     "M5StickS3",      false, true,  false, P::M5PM1,      I::M5UNIFIED, S::SPEAKER,      C::SYSTEM,
+  // Tested on a device (2026-10-14): ESP32-S3, M5PM1 PMIC (its button powers on / resets / powers off by
+  // itself), BMI270 IMU whose INT1 goes to the PMIC, which signals it on GPIO13 (see pm1ImuInit() in
+  // main.cpp), ES8311 codec + speaker (amplifier on PMIC G3), buttons on GPIO11/12, no RTC.
+  {m5::board_t::board_M5StickS3,     "M5StickS3",      true,  true,  false, P::M5PM1,      I::M5UNIFIED, S::SPEAKER,      C::SYSTEM,
    -1, -1, false, 11, 12, 13, -1, 47, 48, 0x6E, 240, 135, m5::imu_t::imu_bmi270,  true,
    {1, 3, 2, 0, 1}, {0, 1, 2}, {1, 1, 1}},
 };

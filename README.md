@@ -8,8 +8,8 @@ A standalone, battery-friendly, gesture/position controlled Pomodoro timer for t
 
 You control it mostly by **how the device is placed**: put it face down to pause, stand it on its end to see a big countdown bar, tap the table to glance at it. Three buttons cover the rest. It needs no phone, no Wi-Fi, no Bluetooth and no cloud. Flash it once and it just works.
 
-> **Supported models:** M5StickC Plus (main target) and the original M5StickC (no buzzer: it signals with its red LED), both tested.
-> **Prepared but untested:** M5StickC Plus2 and M5StickS3.
+> **Supported models:** M5StickC Plus (main target), the original M5StickC (no buzzer: it signals with its red LED) and the M5StickS3, all tested.
+> **Prepared but untested:** M5StickC Plus2.
 > One firmware detects the board at boot (the StickS3 has its own build). Adding a similar model is one row in [`src/boards.h`](src/boards.h); see [PORTING.md](PORTING.md).
 
 ![M5StickC Plus controls: power button on the left side, button B on the right side, M5 button under the screen, USB-C at the bottom](docs/device-r5.svg)
@@ -54,7 +54,7 @@ On the **StickS3** the power button belongs to the power chip and the firmware c
 | **M5StickC (original)** | ✅ tested | No buzzer: the red LED blinks instead of beeping, and the power button's short press switches the LED (`LED ON` / `LED OFF`). Smaller 80×160 screen: compact status line; in portrait it shows only the mode and battery (option flags such as `NO LED` / `TAP` appear in landscape). Only units with the MPU6886 IMU (early SH200Q units are not supported). |
 | **M5StickC Plus v1.1** | ✅ tested | Main target; all features as described here. |
 | **M5StickC Plus2** | ⚠️ untested | Prepared from the docs, not yet run on a device. No AXP192: power held by GPIO4, PWM backlight, buzzer without the 5 V boost, power button (C) on GPIO35. Its IMU interrupt is not documented, so orientation is polled once a second (no deep sleep while paused, no tap-to-wake). |
-| **M5StickS3** | 🟡 partly tested | ESP32-S3, its own build. Tested on a device: poses, speaker, taps (the BMI270 reaches the ESP32 through the power chip), M5 button holds for sound and tap. Not yet verified: deep sleep on battery, timing over long sessions (no RTC: time from the less accurate ESP32 clock). The power button belongs to the power chip (double press: off). While on USB it does not sleep, so it can always be flashed. |
+| **M5StickS3** | ✅ tested | ESP32-S3, its own build. Speaker instead of the buzzer; the BMI270 reaches the ESP32 through the power chip (taps and wake-on-motion as on the Plus); no RTC, so time comes from the less accurate ESP32 clock. The power button belongs to the power chip (double press: off). While on USB it does not sleep, so it can always be flashed. |
 | **M5StickC Plus SE** | ❌ not supported | No motion sensor (IMU). The firmware recognises it and shows "Unsupported device" (E1) instead of running. |
 
 **Flashing — quickest way (no tools to install)**
@@ -276,7 +276,7 @@ The **[web installer](https://romanaerl.github.io/M5StickPomodoro/)** (GitHub Pa
 Every [release](https://github.com/romanaerl/M5StickPomodoro/releases) has two files. Each contains the bootloader, partition table and firmware; flash it at offset **`0x0`**:
 
 - `M5StickPomodoro-vX.Y.Z.bin`: ESP32 models (StickC Plus, StickC, StickC Plus2), the same for all of them.
-- `M5StickPomodoro-vX.Y.Z-S3.bin`: the StickS3 (ESP32-S3, untested); with esptool use `--chip esp32s3`.
+- `M5StickPomodoro-vX.Y.Z-S3.bin`: the StickS3 (ESP32-S3); with esptool use `--chip esp32s3`.
 
 Ways to flash it:
 

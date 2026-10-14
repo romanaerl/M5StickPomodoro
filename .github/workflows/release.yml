@@ -48,4 +48,4 @@ jobs:
           gh release create "$GITHUB_REF_NAME" dist/M5StickPomodoro-"$GITHUB_REF_NAME".bin \
             dist/M5StickPomodoro-"$GITHUB_REF_NAME"-S3.bin \
             --title "M5StickPomodoro $GITHUB_REF_NAME" \
-            --notes "Single-file firmware. M5StickPomodoro-$GITHUB_REF_NAME.bin: M5StickC Plus and M5StickC (tested), M5StickC Plus2 (untested); the board is detected at boot. M5StickPomodoro-$GITHUB_REF_NAME-S3.bin: M5StickS3 (untested). Flash at offset 0x0 — see the README: Flashing without building."
+            --notes "Single-file firmware. M5StickPomodoro-$GITHUB_REF_NAME.bin: M5StickC Plus and M5StickC (tested), M5StickC Plus2 (untested); the board is detected at boot. M5StickPomodoro-$GITHUB_REF_NAME-S3.bin: M5StickS3 (tested). Flash at offset 0x0 — see the README: Flashing without building."

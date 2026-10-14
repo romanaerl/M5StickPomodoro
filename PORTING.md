@@ -7,7 +7,7 @@
 | **M5StickC** (original) | Supported and tested; see [its notes](#m5stickc-original). |
 | **M5StickC Plus** | Main target; developed and tested on it. |
 | **M5StickC Plus2** | **Untested.** Profile and code prepared from the docs; see [its notes](#m5stickc-plus2). |
-| **M5StickS3** | **Partly tested** on a device; its own build (`m5stick-s3`); see [its notes](#m5sticks3). |
+| **M5StickS3** | Tested on a device; its own build (`m5stick-s3`); see [its notes](#m5sticks3). |
 
 Untested profiles have `tested = false` in `src/boards.h`. The boot log then prints
 `Profile ... is UNTESTED on a real device`, and `scripts/flash.sh` warns before flashing.
@@ -41,7 +41,7 @@ Steps:
 
 Models with a different power chip, IMU or pinout need code changes as well; the sections below list them.
 
-> The Plus2 section has not been tested on real hardware, and the StickS3 one only partly. Treat them as a checklist, not as a verified recipe.
+> The Plus2 section has not been tested on real hardware. Treat them as a checklist, not as a verified recipe.
 
 ## Hardware-specific places in `src/main.cpp`
 
@@ -109,7 +109,7 @@ accelerometer axes and display rotations (measured on the device). Its profile d
 
 ## M5StickS3
 
-**Partly tested** on a device (2026-10-14). ESP32-S3, so it has its own build of the same code (PlatformIO
+**Tested** on a device (2026-10-14). ESP32-S3, so it has its own build of the same code (PlatformIO
 env `m5stick-s3`; `scripts/flash.sh` picks it from the chip, and the web installer from the chip family).
 
 | | M5StickS3 | How the firmware handles it |
@@ -123,11 +123,6 @@ env `m5stick-s3`; `scripts/flash.sh` picks it from the chip, and the web install
 | IMU | BMI270 at 0x68; INT1 to PMIC G4; the PMIC's IRQ output G1 goes to GPIO13 | Read directly (works before `M5.begin()` after a wake). Any-motion feature on INT1 (80 mg; taps 10 mg), PMIC IRQ on G4 only; GPIO13 is the wake-on-motion line, so deep sleep and taps work as on the Plus. Self-test: data-ready through the same path. |
 | RTC | None found | `Clock::SYSTEM`: ESP32 time, less accurate across sleep |
 | Internal I2C | SDA 47 / SCL 48 | From the profile |
-
-**Still to check on a device:**
-
-1. On battery: face down deep-sleeps and lifting it resumes; after a finished session, face down and back up starts again.
-2. Timing over a full session, since there is no RTC.
 
 ## Verifying a port
 
