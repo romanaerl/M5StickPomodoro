@@ -50,7 +50,8 @@ constexpr uint32_t SCREEN_ON_MS = 5000;
 constexpr uint32_t FINISHED_SCREEN_MS = 2 * 60 * 1000;  // blinking, unless turned face down
 constexpr uint32_t BLINK_MS = 500;
 constexpr uint32_t NOTICE_MS = 2000;  // "SOUND ON/OFF" banner
-constexpr uint8_t  BRIGHTNESS   = 96;
+constexpr uint8_t  BRIGHTNESS_AXP = 96;  // AXP192 boards: M5GFX maps this to LDO2 ~2.8 V
+constexpr uint8_t  BRIGHTNESS_PWM = 48;  // PWM backlights (StickS3) are brighter at the same value
 // Minute-mark glance: backlight steps through these AXP192 LDO2 levels (1.8 V + 0.1 V * level), one
 // per second. Level 7 is the first one visible on the device.
 constexpr uint8_t  GLANCE_LEVELS[] = {7, 8, 8, 8, 7};
@@ -111,6 +112,7 @@ static bool     noticeOn = false;
 static const BoardProfile& prof() { return PROFILES[profileIdx]; }
 static bool hasBuzzer() { return prof().sound != Sound::LED; }
 static bool axp() { return prof().power == Power::AXP192; }
+static uint8_t brightness() { return axp() ? BRIGHTNESS_AXP : BRIGHTNESS_PWM; }
 // AXP192 calls that M5Unified only provides in ESP32 builds (the AXP192 boards are all ESP32).
 static bool axpUsbPower() {
 #if CONFIG_IDF_TARGET_ESP32
@@ -698,7 +700,7 @@ static void screenWake(int remS, uint32_t ms = SCREEN_ON_MS) {
     battery = readBattery();
     M5.Display.wakeup();
     render(remS);
-    M5.Display.setBrightness(BRIGHTNESS);
+    M5.Display.setBrightness(brightness());
     screenOn = true;
     Accel a = readAccel();
     Serial.printf("screen on: %02d:%02d layout=%d bat=%d%% motion=%u acc=%.2f,%.2f,%.2f\n", remS / 60,
@@ -732,7 +734,7 @@ static int remainingS() {
 static void steadyScreen() {
   led(false);
   if (!screenOn) return;
-  M5.Display.setBrightness(BRIGHTNESS);
+  M5.Display.setBrightness(brightness());
   screenOffAt = millis() + SCREEN_ON_MS;
 }
 
@@ -1029,7 +1031,7 @@ static void refuseWait(uint32_t ms) {
     if (c.looksLike) { snprintf(buf, sizeof buf, "Looks like %s", c.looksLike); line(buf, TFT_YELLOW, body); }
     line("The Pomodoro timer cannot run here.", TFT_LIGHTGREY, body);
     line("github.com/romanaerl/M5StickPomodoro", TFT_LIGHTGREY, body);
-    d.setBrightness(BRIGHTNESS);
+    d.setBrightness(brightness());
   };
   show();
   soundOn = true;
@@ -1148,10 +1150,10 @@ void setup() {
   setLayout(l < 0 ? FLAT : l);
 }
 
-// 0 = off, else AXP192 LDO2 = 1.8 V + 0.1 V * level. PWM backlights (no AXP192) get level * 8 / 255
-// instead: an untested guess at a similar soft step.
+// 0 = off, else AXP192 LDO2 = 1.8 V + 0.1 V * level. PWM backlights (no AXP192) get level * 4 / 255
+// instead: dimmer than their normal brightness, as on the AXP192 boards.
 static void backlightLevel(uint8_t level) {
-  if (!axp()) { M5.Display.setBrightness(level * 8); return; }
+  if (!axp()) { M5.Display.setBrightness(level * 4); return; }  // 28..32: below BRIGHTNESS_PWM, like LDO2 7..8
   if (!level) { M5.In_I2C.bitOff(AXP, 0x12, 1 << 2, I2C_HZ); return; }
   wr(AXP, 0x28, (rd(AXP, 0x28) & 0x0F) | (level << 4));
   M5.In_I2C.bitOn(AXP, 0x12, 1 << 2, I2C_HZ);
@@ -1352,7 +1354,7 @@ static void finishedStep() {
   if ((int32_t)(millis() - screenOffAt) >= 0) { screenSleep(); return; }
   uint32_t t = millis() - finishedAt;
   const bool lit = (t / BLINK_MS) % 2 == 0;
-  M5.Display.setBrightness(lit ? BRIGHTNESS : 0);  // backlight only, panel stays awake
+  M5.Display.setBrightness(lit ? brightness() : 0);  // backlight only, panel stays awake
   led(lit && soundOn);                             // StickC: the LED blinks along
   flushTapSave();
   nap(std::min<uint32_t>(CONFIRM_STEP_MS, BLINK_MS - t % BLINK_MS), true, false);
