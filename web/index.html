@@ -30,10 +30,10 @@
     header { display: flex; align-items: center; gap: 24px; }
     header .intro { flex: 1; min-width: 0; }
     /* Header: a live copy of the timer (see the "hero" script below) */
-    header .hero { flex: none; display: grid; grid-template-columns: 210px auto; align-items: center; column-gap: 6px; }
+    header .hero { flex: none; display: grid; grid-template-columns: 280px auto; align-items: center; column-gap: 6px; }
     header .hero > img { grid-column: 1 / -1; width: 270px; height: auto; }
-    .hero-stage { position: relative; width: 210px; height: 210px; }
-    .hero-dev { position: absolute; left: 5px; top: 55px; width: 200px; height: 100px; transition: transform .3s ease-in-out; }
+    .hero-stage { position: relative; width: 280px; height: 280px; }
+    .hero-dev { position: absolute; left: 5px; top: 72.5px; width: 270px; height: 135px; transition: transform .3s ease-in-out; }
     .hero-dev svg { position: absolute; inset: 0; width: 100%; height: 100%; }
     .hero-dev .back, .hero-dev.down .front { display: none; }
     .hero-dev.down .back { display: block; }
@@ -46,7 +46,7 @@
     }
     .hero-controls button:hover { border-color: var(--accent); color: var(--accent); }
     .hero-controls button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
-    .hero-note { grid-column: 1 / -1; margin: 2px 0 0 !important; width: 210px; text-align: center;
+    .hero-note { grid-column: 1 / -1; margin: 2px 0 0 !important; width: 280px; text-align: center;
                  color: var(--muted); font-size: 13px; line-height: 1.4; min-height: 2.8em; }
     @media (max-width: 680px) {
       header { flex-direction: column; align-items: flex-start; gap: 4px; }
