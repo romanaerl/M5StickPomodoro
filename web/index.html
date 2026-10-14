@@ -29,10 +29,27 @@
     header p { margin: 8px 0; }
     header { display: flex; align-items: center; gap: 24px; }
     header .intro { flex: 1; min-width: 0; }
-    header .hero { flex: none; width: 270px; height: auto; }
+    /* Header: a live copy of the timer (see the "hero" script below) */
+    header .hero { flex: none; display: grid; grid-template-columns: 210px auto; align-items: center; column-gap: 6px; }
+    header .hero > img { grid-column: 1 / -1; width: 270px; height: auto; }
+    .hero-stage { position: relative; width: 210px; height: 210px; }
+    .hero-dev { position: absolute; left: 5px; top: 55px; width: 200px; height: 100px; transition: transform .3s ease-in-out; }
+    .hero-dev svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+    .hero-dev .back, .hero-dev.down .front { display: none; }
+    .hero-dev.down .back { display: block; }
+    .hero-dev .m5 { cursor: pointer; outline: none; }
+    .hero-dev .m5:active rect, .hero-dev .m5:focus-visible rect { fill: #d95a12; }
+    .hero-controls { display: flex; flex-direction: column; gap: 10px; }
+    .hero-controls button {
+      width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--line); background: var(--card);
+      color: var(--fg); cursor: pointer; display: grid; place-items: center; padding: 0;
+    }
+    .hero-controls button:hover { border-color: var(--accent); color: var(--accent); }
+    .hero-controls button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+    .hero-note { grid-column: 1 / -1; margin: 2px 0 0 !important; width: 210px; text-align: center;
+                 color: var(--muted); font-size: 13px; line-height: 1.4; min-height: 2.8em; }
     @media (max-width: 680px) {
       header { flex-direction: column; align-items: flex-start; gap: 4px; }
-      header .hero { width: 240px; }
     }
 
     .install {
@@ -131,8 +148,10 @@
     <p class="version">Firmware __VERSION__ · <a href="https://github.com/romanaerl/M5StickPomodoro">GitHub</a> · <a href="https://github.com/romanaerl/M5StickPomodoro/releases/latest">Releases</a> · <a href="porting.html">Supported models &amp; porting</a></p>
     <p>A standalone, battery-friendly, gesture/position controlled Pomodoro timer for the <b>M5Stick series</b>, including <b>M5StickC</b>, <b>M5StickC Plus V1.1</b>, <b>M5StickC Plus2</b> and <b>M5StickS3</b>. You control it mostly by how the device is placed: face down pauses, standing it on its end shows a big countdown bar, a tap on the table shows the time.</p>
     </div>
-    <img class="hero" src="docs/hero-r1.svg" width="369" height="214"
-      alt="M5StickC Plus lying on its long edge, running a WORK session at 24:59">
+    <div class="hero" id="hero">
+      <img src="docs/hero-r1.svg" width="369" height="214"
+        alt="M5StickC Plus lying on its long edge, running a WORK session at 24:59">
+    </div>
   </header>
 
   <!-- install -->
@@ -173,6 +192,151 @@ __DOCS__
   </footer>
 </main>
 
+<script>
+  // Header: a live copy of the timer, drawn like the device draws its screen (render() in src/main.cpp,
+  // the same geometry as scripts/draw_diagrams.py). A 25-minute WORK session counts down from 24:59.
+  // Turning it face down pauses it, rotating it by 90 degrees switches between the landscape and portrait
+  // layouts once the turn is over. A click on the M5 button starts the session again after the 5 s grace;
+  // a double click switches to the other mode (WORK 25 min / BREAK 5 min, the device defaults) and starts it.
+  // While FINISHED blinks, turning it to another edge starts the other mode, and face down and back up
+  // starts the same mode again, as on the device.
+  (function () {
+    var hero = document.getElementById("hero");
+    if (!hero) return;
+    var LENGTH = { WORK: 25 * 60, BREAK: 5 * 60 }, GRACE_MS = 5000, mode = "WORK";
+    var GRACE_COLOR = { WORK: "#ffd200", BREAK: "#b45aff" };
+    var MONO = "Menlo, Consolas, monospace", SANS = "Helvetica, Arial, sans-serif";
+    var ORANGE = "#f26b1d", ORANGE_D = "#c9550f";
+    var now = function () { return performance.now(); };
+    var endAt = now() + (LENGTH.WORK - 1 + 0.999) * 1000, graceUntil = 0;
+    var paused = null;           // {end, grace}: ms left when turned face down
+    var angle = 0, shown = 0;    // device rotation (cumulative) and the layout on screen
+    var down = false, finishedDown = false;
+
+    function mix(a, b, t) { return "rgb(" + a.map(function (v, i) { return Math.round(v + (b[i] - v) * t); }) + ")"; }
+    function drain(f) {  // WORK: green -> orange -> red as the bar drains; BREAK: blue -> light blue
+      if (mode === "BREAK") return mix([0, 90, 255], [160, 225, 255], 1 - f);
+      return f >= .5 ? mix([0, 200, 0], [255, 140, 0], (1 - f) / .5) : mix([255, 140, 0], [230, 0, 0], (.5 - f) / .5);
+    }
+    function pad(n) { return (n < 10 ? "0" : "") + n; }
+    function screen(tall, text, frac, color, status, statusColor, lit) {
+      var W = tall ? 135 : 240, H = tall ? 240 : 135, S = 18, M = 3, P = 5;
+      var fy = (tall ? S : 0) + M, fw = W - 2 * M, fh = H - S - 2 * M;
+      var bx = M + P, by = fy + P, bw = fw - 2 * P, bh = fh - 2 * P, fill = bh * frac;
+      var g = '<rect width="' + W + '" height="' + H + '" fill="#000"/>';
+      if (!lit) return g;
+      g += '<rect x="' + M + '" y="' + fy + '" width="' + fw + '" height="' + fh + '" rx="8" fill="none" stroke="#fff" stroke-width="2"/>' +
+           '<rect x="' + bx + '" y="' + by + '" width="' + bw + '" height="' + (bh - fill) + '" fill="#1e1e1e"/>' +
+           '<rect x="' + bx + '" y="' + (by + bh - fill) + '" width="' + bw + '" height="' + fill + '" fill="' + color + '"/>';
+      var fs = tall && text.length > 2 ? 34 : 58, cy = by + bh / 2 + fs * 0.36;
+      var t = function (dx, dy, c) {
+        return '<text x="' + (W / 2 + dx) + '" y="' + (cy + dy) + '" text-anchor="middle" font-family="' + MONO +
+               '" font-size="' + fs + '" font-weight="700" fill="' + c + '">' + text + "</text>";
+      };
+      [-3, 0, 3].forEach(function (dx) { [-3, 0, 3].forEach(function (dy) { g += t(dx, dy, "#000"); }); });
+      g += t(0, 0, "#fff");
+      var sy = tall ? 14 : H - 4;
+      return g + '<text x="4" y="' + sy + '" font-family="' + SANS + '" font-size="12" fill="' + statusColor + '">' + status + "</text>" +
+             '<text x="' + (W - 4) + '" y="' + sy + '" text-anchor="end" font-family="' + SANS + '" font-size="12" fill="#c0c0c0">100%</text>';
+    }
+
+    hero.innerHTML =
+      '<div class="hero-stage"><div class="hero-dev">' +
+        '<svg class="front" viewBox="0 0 230 115" role="img" aria-label="M5StickC Plus running the timer">' +
+          '<rect x="1" y="1" width="228" height="113" rx="16" fill="' + ORANGE + '" stroke="' + ORANGE_D + '" stroke-width="2"/>' +
+          '<rect x="10.3" y="8.3" width="156.2" height="91.1" rx="5" fill="#111"/><g class="lcd"></g>' +
+          '<g class="m5" role="button" tabindex="0" aria-label="M5 button: click starts the session again, double click switches WORK / BREAK">' +
+            '<rect x="178" y="30" width="34" height="55" rx="7" fill="' + ORANGE + '" stroke="' + ORANGE_D + '" stroke-width="2.5"/>' +
+            '<text x="195" y="62" text-anchor="middle" font-family="' + SANS + '" font-size="11" font-weight="700" fill="#333">M5</text></g>' +
+        "</svg>" +
+        '<svg class="back" viewBox="0 0 230 115" aria-hidden="true">' +
+          '<rect x="1" y="1" width="228" height="113" rx="16" fill="' + ORANGE + '" stroke="' + ORANGE_D + '" stroke-width="2"/>' +
+          '<text x="115" y="62" text-anchor="middle" font-family="' + SANS + '" font-size="13" fill="#7a3208">z z z</text>' +
+        "</svg>" +
+      "</div></div>" +
+      '<div class="hero-controls">' +
+        '<button type="button" class="flip" aria-pressed="false" title="Turn face down / back up">' +
+          '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+          '<rect x="5" y="14" width="14" height="6" rx="1.5"/><path d="M6 10.5C7 5 17 5 18 10.5"/><path d="M15 9.5l3 1.5 1.5-3"/></svg></button>' +
+        '<button type="button" class="rotate" title="Rotate by 90°">' +
+          '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+          '<path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg></button>' +
+      "</div>" +
+      '<p class="hero-note" aria-live="polite"></p>';
+
+    var dev = hero.querySelector(".hero-dev"), lcd = hero.querySelector(".lcd"), note = hero.querySelector(".hero-note");
+    var flipBtn = hero.querySelector(".flip"), m5 = hero.querySelector(".m5");
+
+    function place(squash) { dev.style.transform = "rotate(" + angle + "deg) scaleY(" + (squash ? 0 : 1) + ")"; }
+    function render() {
+      var t = now(), tall = shown % 180 === 90;
+      var end = paused ? paused.end : endAt - t, grace = paused ? paused.grace : graceUntil - t;
+      var text, frac, color, status = mode, sc = "#c0c0c0", lit = true, msg;
+      if (grace > 0) {
+        var s = LENGTH[mode] + Math.ceil(grace / 1000);
+        text = pad(Math.floor(s / 60)) + ":" + pad(s % 60); frac = 1; color = GRACE_COLOR[mode];
+        msg = mode + " starts: 5 s grace, then it runs";
+      } else if (end > 0) {
+        var r = Math.floor(end / 1000);
+        text = pad(Math.floor(r / 60)) + ":" + pad(r % 60); frac = end / 1000 / LENGTH[mode]; color = drain(frac);
+        msg = (mode === "BREAK" ? "BREAK · " : "") + (tall ? "On its end: big countdown bar" : "Lying on its long edge");
+      } else {
+        text = "00:00"; frac = 0; color = "#1e1e1e"; status = "FINISHED"; sc = "#ff3030";
+        lit = Math.floor(t / 500) % 2 === 0;
+        msg = "Finished: rotate it for " + (mode === "WORK" ? "BREAK" : "WORK") + ", or face down and up for " + mode;
+      }
+      if (down) msg = "Face down: paused";
+      var W = tall ? 135 : 240, H = tall ? 240 : 135;
+      lcd.setAttribute("transform", "translate(88.4 53.85) rotate(" + -shown + ") scale(0.62) translate(" + -W / 2 + " " + -H / 2 + ")");
+      lcd.innerHTML = screen(tall, text, Math.max(0, Math.min(1, frac)), color, status, sc, lit);
+      if (note.textContent !== msg) note.textContent = msg;
+    }
+
+    flipBtn.addEventListener("click", function () {
+      var t = now();
+      down = !down;
+      if (down) {
+        finishedDown = graceUntil <= t && endAt <= t;
+        paused = { end: endAt - t, grace: graceUntil - t };
+      } else {
+        endAt = t + paused.end; graceUntil = t + paused.grace; paused = null;
+        if (finishedDown) { finishedDown = false; restart(false); }
+      }
+      flipBtn.setAttribute("aria-pressed", String(down));
+      render();
+      place(true);  // turn over: squash, show the other side, unsquash
+      setTimeout(function () { dev.classList.toggle("down", down); place(false); }, 300);
+    });
+    var settle;
+    hero.querySelector(".rotate").addEventListener("click", function () {
+      angle += 90;
+      place();
+      clearTimeout(settle);  // like the device: the layout follows once the new pose is held
+      var wasFinished = !paused && graceUntil <= now() && endAt <= now();
+      settle = setTimeout(function () {
+        shown = angle % 360;
+        if (wasFinished) restart(true); else render();
+      }, 450);
+    });
+    function restart(switchMode) {
+      if (down) return;  // face down: the screen is off and the button is under the device
+      if (switchMode) mode = mode === "WORK" ? "BREAK" : "WORK";
+      var t = now();
+      graceUntil = t + GRACE_MS; endAt = graceUntil + LENGTH[mode] * 1000;
+      render();
+    }
+    var pending;  // a click waits briefly for a second one: double click = the other mode
+    function press() {
+      if (pending) { clearTimeout(pending); pending = null; restart(true); return; }
+      pending = setTimeout(function () { pending = null; restart(false); }, 300);
+    }
+    m5.addEventListener("click", press);
+    m5.addEventListener("dblclick", function (e) { e.preventDefault(); });
+    m5.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); press(); } });
+    render();
+    setInterval(render, 250);
+  })();
+</script>
 <script>
   // Diagram gallery (built by scripts/render_docs.py): a thumbnail click shows that diagram large.
   document.querySelectorAll(".gallery").forEach(function (g) {
