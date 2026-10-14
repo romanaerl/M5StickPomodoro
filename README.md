@@ -26,7 +26,7 @@ You control it mostly by **how the device is placed**: put it face down to pause
 
 | Button | Press | Hold |
 |---|---|---|
-| **M5** (front, under the screen) | Restart the current mode (on release). Press **again within 5 s** → switch WORK ⇄ BREAK. | **2 s**: sound on / off. **5 s**: tap-to-wake in horizontal poses on / off. The screen shows what releasing will do. |
+| **M5** (front, under the screen) | Restart the current mode (on release). Press **again within 5 s** → switch WORK ⇄ BREAK. | **1.5 s**: sound on / off. **3 s**: tap-to-wake in horizontal poses on / off. The screen shows what releasing will do. |
 | **B** (right side) | 1st press only shows the length for a second, then the countdown (the session keeps running). Each next press **+1 min** (1–60), and 1 s after the last press a new session starts with it. | Adds minutes quickly. |
 | **Power** (left side) | Off: switch on. On, screen lit: **sound on / off**. | **1.5 s**: tap-to-wake in horizontal poses on / off. **6 s**: switch off. |
 
@@ -130,7 +130,7 @@ Details: [Build and flash](#build-and-flash).
 | **B** further presses / hold | +1 minute per press (wraps 60 → 1); holding repeats quickly. 1 s after the last press the new length is saved and a new session starts. |
 | **Power** button (left side), short press, screen on | Sound on / off (`SOUND ON` / `SOUND OFF`). |
 | **Power** button, hold ~1.5 s, screen on | Tap-to-wake in horizontal poses on / off (`TAP ON` / `TAP OFF`). |
-| **M5** button, hold 2 s / 5 s | The same as the power button's short press / hold: sound / tap-to-wake on / off. While you hold, the banner shows the change; it applies on release. |
+| **M5** button, hold 1.5 s / 3 s | The same as the power button's short press / hold: sound / tap-to-wake on / off. While you hold, the banner shows the change; it applies on release. |
 | Tap the table (tap poses) | Shows the full `MM:SS` for 5 s. |
 | Session ends, then move it to another pose for 1 s | Starts the other mode (WORK → BREAK or BREAK → WORK). |
 | Session ends, then face down and back up | Starts the same mode again. |
@@ -234,14 +234,14 @@ A new pose must be stable for a few samples (~0.5 s) before the layout changes. 
 When the screen is dark, a light tap on the table (or any small vibration) shows the full `MM:SS` for 5 seconds.
 
 - **Standing on an end:** always on.
-- **Flat and on both long edges:** off by default. Toggle it by holding the power button for ~1.5 s while the screen is on, or the M5 button for 5 s.
+- **Flat and on both long edges:** off by default. Toggle it by holding the power button for ~1.5 s while the screen is on, or the M5 button for 3 s.
 - In tap poses the accelerometer samples at 100 Hz with a 40 mg threshold to catch light taps. Otherwise it samples at 12.5 Hz with an 80 mg threshold to save power and ignore the desk.
 
 The power button's long press is reported by the power chip at 1.5 s, while you are still holding the button. The `TAP` setting therefore changes at once but is **saved only 6 seconds later**. If you keep holding the button to switch the device off, it powers down before the change is saved, so switching off never changes the setting.
 
 ### Sound
 
-- A **short press** of the power button, while the screen is on, or **holding the M5 button for 2 s** toggles the sound. `MUTE` shows in the status line while the sound is off.
+- A **short press** of the power button, while the screen is on, or **holding the M5 button for 1.5 s** toggles the sound. `MUTE` shows in the status line while the sound is off.
 - Power-button presses while the screen is dark are ignored, so you cannot change anything by accident in your bag.
 
 ### Battery indicator
@@ -257,8 +257,8 @@ The power button's long press is reported by the power chip at 1.5 s, while you 
 |---|---|---|
 | WORK length | yes | B button in WORK |
 | BREAK length | yes | B button in BREAK |
-| Sound on / off | yes | short press of power button, or M5 held 2 s |
-| Tap-to-wake in horizontal poses | yes | long press of power button, or M5 held 5 s |
+| Sound on / off | yes | short press of power button, or M5 held 1.5 s |
+| Tap-to-wake in horizontal poses | yes | long press of power button, or M5 held 3 s |
 | Current session, mode, pause state | across sleep only | — |
 
 Power-on always starts a fresh WORK session. Settings are written to flash only when they change, never to track the countdown.

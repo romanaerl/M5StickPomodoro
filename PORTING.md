@@ -115,7 +115,7 @@ env `m5stick-s3`; `scripts/flash.sh` picks it from the chip, and the web install
 | | M5StickS3 | How the firmware handles it |
 |---|---|---|
 | Chip | ESP32-S3-PICO-1-N8R8, 8 MB flash, native USB | Env `m5stick-s3` (USB CDC on boot). The log's `flush()` never returns without a computer reading it, so it is skipped then (it froze the device on battery). |
-| Power | M5PM1 PMIC (I2C 0x6E); its button powers on / resets, double press powers off, hold = flashing mode | `Power::M5PM1`: the firmware never sees that button; the M5 button holds (2 s sound, 5 s tap) replace it |
+| Power | M5PM1 PMIC (I2C 0x6E); its button powers on / resets, double press powers off, hold = flashing mode | `Power::M5PM1`: the firmware never sees that button; the M5 button holds (1.5 s sound, 3 s tap) replace it |
 | USB | Inside the chip: stops in light and deep sleep | No sleep while the PMIC measures VBUS, so the port always answers |
 | Backlight | PWM on GPIO38: dark during light sleep | No light sleep while the backlight is lit (it flickered) |
 | Sound | ES8311 codec + speaker; amplifier on PMIC G3 | `Sound::SPEAKER`, started for each beep; G3 is set and read back with retries (single writes were sometimes missed: a click, no tone). Volume 90/255, beeps at least 140 ms. |

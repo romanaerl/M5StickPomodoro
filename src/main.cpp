@@ -41,8 +41,8 @@
 #define BREAK_MIN 5     // default BREAK length, minutes
 #endif
 constexpr uint32_t MODE_SWITCH_MS = 5000;  // second button-A press within this switches the mode
-constexpr uint32_t HOLD_SOUND_MS = 2000;   // button A held this long: sound (LED) on/off
-constexpr uint32_t HOLD_TAP_MS = 5000;     // held this long: tap-to-wake on/off
+constexpr uint32_t HOLD_SOUND_MS = 1500;   // button A held this long: sound (LED) on/off
+constexpr uint32_t HOLD_TAP_MS = 3000;     // held this long: tap-to-wake on/off
 constexpr int32_t  GRACE_MS = 5000;        // shown in yellow before the session proper starts
 constexpr uint32_t POSE_SWITCH_MS = 1000;  // FINISHED: a new pose held this long starts the other mode
 constexpr uint32_t SET_TIMEOUT_MS = 1000;
@@ -1201,7 +1201,7 @@ static bool handleButtons(int remS) {
   }
   if (digitalRead(PIN_BTN_A()) == LOW) {
     // M5 button, decided on release: a press restarts (a second one within 5 s switches the mode), held
-    // 2 s switches the sound, held 5 s tap-to-wake. Works on every board; on the StickS3 it is the only
+    // 1.5 s switches the sound, held 3 s tap-to-wake. Works on every board; on the StickS3 it is the only
     // way, since its power button belongs to the PMIC. While held, the screen previews the change.
     const uint32_t t0 = millis();
     bool hintSound = false, hintTap = false;
