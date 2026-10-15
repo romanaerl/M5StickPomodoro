@@ -121,6 +121,7 @@ env `m5stick-s3`; `scripts/flash.sh` picks it from the chip, and the web install
 | Sound | ES8311 codec + speaker; amplifier on PMIC G3 | `Sound::SPEAKER`, started for each beep; G3 is set and read back with retries (single writes were sometimes missed: a click, no tone). Volume 90/255, beeps at least 140 ms. |
 | Buttons | GPIO11 (front), GPIO12 (side) | From the profile |
 | IMU | BMI270 at 0x68; INT1 to PMIC G4; the PMIC's IRQ output G1 goes to GPIO13 | Read directly (works before `M5.begin()` after a wake). Any-motion feature on INT1 (80 mg; taps 15 mg), PMIC IRQ on G4 only; GPIO13 is the wake-on-motion line, so deep sleep and taps work as on the Plus. Self-test: data-ready through the same path. |
+| Sleep | Deep sleep of the ESP32-S3 leaves every supply on (screen, codec, the green power LED) | Paused / finished: the M5PM1 switches everything off except itself and the IMU's LDO; the IMU (G4) powers it on again. The state is kept in the PMIC's RAM (0xA0..) and restored at boot. The M5 button cannot wake it then (the ESP32 is off). |
 | RTC | None found | `Clock::SYSTEM`: ESP32 time, less accurate across sleep |
 | Internal I2C | SDA 47 / SCL 48 | From the profile |
 

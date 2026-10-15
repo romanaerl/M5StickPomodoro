@@ -818,6 +818,55 @@ static void resume(uint32_t since) {
 }
 
 // PAUSED / FINISHED: deep sleep until the IMU sees motion (or button A when finished).
+// StickS3: instead of the ESP32-S3's deep sleep (which leaves every supply on: screen, codec and the
+// green power LED), the M5PM1 switches everything off except itself and the IMU's LDO; the IMU's
+// any-motion on PMIC G4 powers the system on again (M5Stack's StickS3 low-power example). The ESP32's
+// RTC memory is lost, so the state goes to the PMIC's 32-byte RAM (0xA0..) and setup() restores it.
+constexpr uint8_t PM1_RAM = 0xA0, PM1_RAM_MAGIC = 0xA5;
+static uint8_t pm1Rd(uint8_t reg) {  // the PMIC can miss the first transaction after idling
+  uint8_t v = 0;
+  for (int i = 0; i < 3; i++) if (M5.In_I2C.readRegister(PM1, reg, &v, 1, PM1_HZ)) break;
+  return v;
+}
+static void pm1Wr(uint8_t reg, uint8_t v) {
+  for (int i = 0; i < 5; i++) {
+    M5.In_I2C.writeRegister8(PM1, reg, v, PM1_HZ);
+    if (reg == 0x0C || pm1Rd(reg) == v) return;  // SYS_CMD is write-only
+  }
+}
+static void pm1SaveState() {
+  const uint8_t b[] = {PM1_RAM_MAGIC, state, mode, (uint8_t)pausedRemMs, (uint8_t)(pausedRemMs >> 8),
+                       (uint8_t)(pausedRemMs >> 16), (uint8_t)(pausedRemMs >> 24), finishedDown, inGrace,
+                       (uint8_t)sleepWakes, (uint8_t)(sleepWakes >> 8)};
+  for (size_t i = 1; i < sizeof b; i++) pm1Wr(PM1_RAM + i, b[i]);
+  pm1Wr(PM1_RAM, b[0]);  // magic last: a cut-off save is not restored
+}
+// Called first thing in setup() on the StickS3: true after a power-on by the IMU with a saved state.
+static bool pm1RestoreState() {
+  const uint8_t src = pm1Rd(0x05);  // WAKE_SRC, bit 5: external GPIO (the IMU on G4)
+  const bool ok = (src & 0x20) && pm1Rd(PM1_RAM) == PM1_RAM_MAGIC;
+  if (ok) {
+    uint8_t b[11];
+    for (int i = 0; i < 11; i++) b[i] = pm1Rd(PM1_RAM + i);
+    state = b[1]; mode = b[2];
+    pausedRemMs = (int32_t)(b[3] | b[4] << 8 | b[5] << 16 | (uint32_t)b[6] << 24);
+    finishedDown = b[7]; inGrace = b[8]; sleepWakes = b[9] | b[10] << 8;
+  }
+  pm1Wr(PM1_RAM, 0x00);  // consumed: a later plain power-on starts fresh
+  pm1Wr(0x05, 0x00);
+  return ok;
+}
+static void pm1Shutdown() {
+  pm1SaveState();
+  pm1Wr(0x19, pm1Rd(0x19) & ~0x10);  // GPIO_WAKE_CFG: G4 falling edge (INT1 active low)
+  pm1Wr(0x18, pm1Rd(0x18) | 0x10);   // GPIO_WAKE_EN: G4
+  pm1Wr(0x06, pm1Rd(0x06) | 0x14);   // PWR_CFG: LDO on, LED_EN level high (as in M5Stack's example)
+  pm1Wr(0x07, pm1Rd(0x07) | 0x20);   // HOLD_CFG: keep the LDO (IMU) on while off
+  flushLog();
+  pm1Wr(0x0C, 0xA1);                 // SYS_CMD: key 0xA, shutdown
+  delay(2000);                       // not off after all: fall back to the ESP32's deep sleep
+}
+
 static void speakerWarmAbort();
 [[noreturn]] static void deepSleep() {
   flushTapSave(true);
@@ -838,6 +887,10 @@ static void speakerWarmAbort();
   }
   imuMotion();                                   // release INT before arming
   esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
+  if (pm1Imu() && womOk) {  // StickS3: the PMIC switches everything off (falls through if it does not)
+    if (prof().power == Power::M5PM1) M5.Display.setBrightness(0);
+    pm1Shutdown();
+  }
   if (womOk) esp_sleep_enable_ext0_wakeup(PIN_INT(), 0);
   if (state == FINISHED) esp_sleep_enable_ext1_wakeup(1ULL << PIN_BTN_A(), ESP_EXT1_WAKEUP_ALL_LOW);
   flushLog();
@@ -1123,9 +1176,21 @@ void setup() {
   // Internal I2C before M5.begin(): the profile chosen at cold boot after a wake, else this chip's bus.
   M5.In_I2C.begin(I2C_NUM_1, (gpio_num_t)sda, (gpio_num_t)scl);
 
+  bool motionWake = warm && cause == ESP_SLEEP_WAKEUP_EXT0;
+#if CONFIG_IDF_TARGET_ESP32S3
+  // StickS3 powered on again by the IMU after pm1Shutdown(): like a motion wake from deep sleep.
+  if (!warm && M5.In_I2C.scanID(PM1, PM1_HZ) && pm1RestoreState()) {
+    for (size_t i = 0; i < sizeof PROFILES / sizeof PROFILES[0]; i++)
+      if (PROFILES[i].board == m5::board_t::board_M5StickS3) profileIdx = i;
+    rtcMagic = MAGIC;
+    womOk = true;
+    warm = motionWake = true;
+  }
+#endif
+
   // Fast path after a motion wake: decide from the pose before touching the display.
   uint32_t since = millis();
-  if (warm && cause == ESP_SLEEP_WAKEUP_EXT0) {
+  if (motionWake) {
     int pose = settledPose(&since);
     if (state == FINISHED && pose == -1) finishedDown = true;
     bool wake = pose == 1 && (state == PAUSED || (state == FINISHED && finishedDown));
