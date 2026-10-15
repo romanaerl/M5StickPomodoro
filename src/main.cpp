@@ -97,6 +97,8 @@ RTC_DATA_ATTR bool     womOk;         // GPIO35 interrupt line verified at cold 
 RTC_DATA_ATTR bool     finishedDown;  // FINISHED: has been face down since the session ended
 RTC_DATA_ATTR uint8_t  profileIdx;    // PROFILES row; set at cold boot, used before M5.begin() after sleep
 RTC_DATA_ATTR uint16_t sleepWakes;    // diagnostics: deep-sleep wakes that went back to sleep
+RTC_DATA_ATTR bool     inGrace;       // RUNNING within the grace period of a new session (kept in deep
+                                       // sleep: face down during the grace, the start beep came no more)
 static uint16_t motionEvents;         // diagnostics: WOM interrupts while running
 
 static M5Canvas canvas(&M5.Display);
@@ -108,7 +110,6 @@ static int      downCount = 0, layoutCount = 0, pendingLayout = -1;
 static uint32_t downSince = 0, motionUntil = 0, finishedAt = 0, noticeUntil = 0, lastPressAt = 0;
 static uint32_t poseSince = 0;
 static int      finishLayout = -1;
-static bool     inGrace = false;  // RUNNING within the grace period of a new session
 static bool     poseChanging = false;
 static bool     noticeShown = false;
 static const char* noticeMsg = "";
@@ -326,6 +327,10 @@ static bool imuMotion() {  // a motion event since the last call; clears it, rel
 // BMI270 any-motion (feature page 1, bytes 12..15 of 0x30..0x3F): fires when any axis changes by more
 // than thrMg within durSamples x 20 ms. Used like the MPU6886's wake-on-motion threshold.
 static void bmiAnyMotion(uint16_t thrMg, uint16_t durSamples) {
+  // In advanced power save (set for deep sleep) the feature registers miss burst writes: after a motion
+  // wake that goes back to sleep, the config came out broken and nothing woke the device any more.
+  M5.In_I2C.writeRegister8(bmi(), 0x7C, 0x00, I2C_HZ);  // PWR_CONF: power save off
+  delay(1);
   uint8_t f[16];
   M5.In_I2C.writeRegister8(bmi(), 0x2F, 1, I2C_HZ);
   M5.In_I2C.readRegister(bmi(), 0x30, f, 16, I2C_HZ);
@@ -813,8 +818,10 @@ static void resume(uint32_t since) {
 }
 
 // PAUSED / FINISHED: deep sleep until the IMU sees motion (or button A when finished).
+static void speakerWarmAbort();
 [[noreturn]] static void deepSleep() {
   flushTapSave(true);
+  speakerWarmAbort();
   if (axp()) {
     M5.In_I2C.bitOff(AXP, 0x12, 1 << 3, I2C_HZ);  // LCD logic power (LDO3) off
     wr(AXP, 0x46, 0x03);                           // drop pending power-key presses
@@ -824,6 +831,11 @@ static void resume(uint32_t since) {
     gpio_deep_sleep_hold_en();
   }
   imuTapSensitive(false);
+  if (pm1Imu()) {  // BMI270 for the night: 50 Hz low-power accelerometer (~25 uA instead of ~180 uA in
+                   // performance mode); any-motion keeps working. M5.begin() resets it after the wake.
+    M5.In_I2C.writeRegister8(bmi(), 0x40, 0x17, I2C_HZ);  // ACC_CONF: ODR 50 Hz, avg 2, low power
+    M5.In_I2C.writeRegister8(bmi(), 0x7C, 0x01, I2C_HZ);  // PWR_CONF: advanced power save
+  }
   imuMotion();                                   // release INT before arming
   esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
   if (womOk) esp_sleep_enable_ext0_wakeup(PIN_INT(), 0);
@@ -860,6 +872,38 @@ static bool pm1Bits(bool on) {
 }
 
 // The buzzer is powered from the AXP192 5 V boost (EXTEN), so it is enabled only while beeping.
+// StickS3 speaker warm-up. After each power-on or reset the first ~0.5-0.6 s of speaker time stay
+// silent (the codec's output ramps up only while it gets the I2S clock): the first beeps were silent or
+// cut short. So once per boot it runs ~1 s at volume 0 with the amplifier off, started during the
+// grace period of a new session (screen on anyway) and finished in the background.
+static bool speakerWarm = false, speakerWarming = false;
+static uint32_t speakerWarmEnd = 0;
+static void speakerWarmStart() {
+  if (prof().sound != Sound::SPEAKER || speakerWarm || speakerWarming || !soundOn) return;
+  M5.Speaker.begin();
+  pm1Bits(false);  // M5Unified's enable callback switched the amplifier on
+  M5.Speaker.setVolume(0);
+  M5.Speaker.tone(4000, 1000);
+  speakerWarming = true;
+  speakerWarmEnd = millis() + 1100;
+}
+static void speakerWarmPoll(bool wait = false) {
+  if (!speakerWarming) return;
+  while (wait && (int32_t)(millis() - speakerWarmEnd) < 0) delay(10);
+  if ((int32_t)(millis() - speakerWarmEnd) < 0 || M5.Speaker.isPlaying()) return;
+  M5.Speaker.end();
+  pm1Bits(false);
+  speakerWarming = false;
+  speakerWarm = true;
+}
+
+static void speakerWarmAbort() {  // before deep sleep: the speaker must not keep running
+  if (!speakerWarming) return;
+  M5.Speaker.end();
+  pm1Bits(false);
+  speakerWarming = false;
+}
+
 static void beep(int n, int onMs, int offMs) {
   if (!soundOn) return;
   if (prof().sound == Sound::LED) {  // original M5StickC: the same pattern on the red LED
@@ -873,6 +917,7 @@ static void beep(int n, int onMs, int offMs) {
     return;
   }
   if (prof().sound == Sound::SPEAKER) {  // codec + speaker (StickS3), started only for the beep
+    if (!speakerWarm) { speakerWarmStart(); speakerWarmPoll(true); }
     if (!M5.Speaker.begin()) Serial.println("speaker: begin failed");
     // The amplifier is switched by the M5PM1's G3. M5Unified sets it with single writes, which the PMIC
     // sometimes misses (its I2C answers late after idling): the beep then was only a click. Set it here,
@@ -1315,6 +1360,8 @@ static void followLayout(const Accel& a, int remS) {
 }
 
 static void runStep() {
+  if (inGrace) speakerWarmStart();
+  speakerWarmPoll();
   int remS = remainingS();
   if (remS == 0) { finish(); return; }
   if (inGrace && remS * 1000 <= sessionMs()) {  // grace over: the session proper starts
